@@ -6,10 +6,7 @@
 <title>Hafizabad Land Use Plan — Statistical Dashboard | Punjab Spatial Planning Authority</title>
 <meta name="description" content="Interactive map and statistical dashboard for the Hafizabad District Land Use Plan — 16,980 parcels across 60 land use classes, Punjab Spatial Planning Authority.">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-
+<!-- Tahoma is a system font, no import needed -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
@@ -20,16 +17,20 @@
 <!-- ══════════════════════════════════════ masthead -->
 <header class="masthead">
   <div class="masthead__in">
-    <img class="masthead__crest" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/GOVT-LOGO-1-150x150.png" alt="Government of Punjab" onerror="this.style.display='none'">
-    <div class="masthead__txt">
-      <h1 class="masthead__title">Data Analytics Dashboard of Land Use Plans</h1>
-      <p class="masthead__sub">Hafizabad District — Land Use Classification &amp; Zoning Plan</p>
+    <img class="masthead__logo masthead__logo--l" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/GOVT-LOGO-1-150x150.png" alt="Government of Punjab Logo" onerror="this.style.display='none'">
+
+    <div class="masthead__centre">
+      <div class="masthead__text">
+        <h1 class="masthead__title"><span>Hafizabad District</span> Land Use Plan</h1>
+        <div class="masthead__sub">Land Use Classification &amp; Zoning — Statistical Dashboard &amp; Map Viewer</div>
+      </div>
+      <div class="masthead__stats">
+        <div class="hstat"><div class="hstat__n" id="mcParcels">—</div><div class="hstat__l">Parcels</div></div>
+        <div class="hstat"><div class="hstat__n" id="mcClasses">—</div><div class="hstat__l">Land Uses</div></div>
+      </div>
     </div>
-    <div class="masthead__counts">
-      <div class="mcount"><span class="mcount__n" id="mcParcels">—</span><span class="mcount__l">Parcels</span></div>
-      <div class="mcount"><span class="mcount__n" id="mcClasses">—</span><span class="mcount__l">Land Uses</span></div>
-    </div>
-    <img class="masthead__crest" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/PMU-LOGO-1-150x150.png" alt="Programme Management Unit" onerror="this.style.display='none'">
+
+    <img class="masthead__logo masthead__logo--r" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/PMU-LOGO-1-150x150.png" alt="PMU Logo" onerror="this.style.display='none'">
   </div>
 </header>
 
