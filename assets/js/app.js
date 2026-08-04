@@ -10,31 +10,41 @@
 const BUILD = 'hafizabad-dashboard 2026-08-05a';
 console.info(BUILD);
 
-/* ─────────────────────────────────────────── palette
-   Base hues follow land use plan convention: residential in ochre,
-   commercial red, industrial violet, agriculture green, public blue,
-   water and open space teal, movement grey.                        */
-const GROUP_HUE = {
-  residential : '#e0b455',
-  commercial  : '#cc4f3f',
-  industrial  : '#8d6aa6',
-  transport   : '#78877f',
-  agriculture : '#9dc274',
-  amenities   : '#4a7cb5',
-  environment : '#3a9c9c',
-  regulatory  : '#c2879c'
-};
+/* ─────────────────────────────────────────── palette & labels
+   Populated from the source data's own LU_Class field during init(),
+   so the legend shows the district's real terminology (e.g. "Transportation
+   Network", "Other Uses") instead of an invented scheme. A keyword hint
+   picks a familiar hue for common categories; anything unrecognised
+   cycles through a neutral fallback palette instead. */
+let GROUP_HUE = {};
+let GROUP_LABEL = {};
 
-const GROUP_LABEL = {
-  residential : 'Residential & settlement',
-  commercial  : 'Commercial & mixed use',
-  industrial  : 'Industrial & agro-industry',
-  transport   : 'Movement & transport',
-  agriculture : 'Agriculture & rural land',
-  amenities   : 'Public facilities',
-  environment : 'Water & open space',
-  regulatory  : 'Regulatory designations'
-};
+const HUE_HINTS = [
+  [/resident/i,                    '#e0b455'],
+  [/commerc/i,                     '#cc4f3f'],
+  [/industr/i,                     '#8d6aa6'],
+  [/transport/i,                   '#78877f'],
+  [/agricultur/i,                  '#9dc274'],
+  [/notif|regulat|\bstate\b/i,     '#c2879c'],
+  [/water|environ|open.?space|park/i, '#3a9c9c'],
+  [/other|misc/i,                  '#4a7cb5'],
+];
+const HUE_FALLBACK = ['#4a7cb5', '#c2879c', '#3a9c9c', '#9dc274', '#8d6aa6',
+                       '#cc4f3f', '#e0b455', '#78877f', '#b56a9e', '#5c8f6e'];
+
+function titleCase(slug) {
+  return slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function assignGroupStyles(groups, labels) {
+  let fi = 0;
+  Object.keys(groups).forEach(g => {
+    const label = (labels && labels[g]) || titleCase(g);
+    GROUP_LABEL[g] = label;
+    const hit = HUE_HINTS.find(([re]) => re.test(label));
+    GROUP_HUE[g] = hit ? hit[1] : HUE_FALLBACK[fi++ % HUE_FALLBACK.length];
+  });
+}
 
 function shade(hex, amt) {
   const n = parseInt(hex.slice(1), 16);
@@ -86,6 +96,7 @@ fetch('data/stats.json')
 
 function init(stats) {
   S.stats = stats;
+  assignGroupStyles(stats.groups, stats.groupLabels);
 
   // class -> group, and a distinct shade per class within its group
   Object.entries(stats.groups).forEach(([g, classes]) => {
@@ -221,7 +232,7 @@ function readRibbon() {
     add(`<i class="ribbon__sw" style="background:${GROUP_HUE[g]}"></i>` +
         `${GROUP_LABEL[g] || g}`);
   } else {
-    add(`Showing <b>${anyOnGroups.length}</b> of 8 layers`);
+    add(`Showing <b>${anyOnGroups.length}</b> of ${Object.keys(S.stats.groups).length} layers`);
   }
   add(`<b>${nf(acres)}</b> acres`);
   add(`<b>${nf(100 * acres / S.stats.totals.acres, 1)}%</b> of district`);
