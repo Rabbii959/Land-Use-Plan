@@ -1,35 +1,35 @@
 /* ═══════════════════════════════════════════════════════════════
    Hafizabad Land Use Plan — Punjab Spatial Planning Authority
-   Palette is drawn from the provincial identity: government green,
-   wheat gold, and a paper tone tinted toward the district's fields.
+   Palette and type match the province-wide PSPA dashboard so the
+   two read as one product family.
    ═══════════════════════════════════════════════════════════════ */
 
 :root{
-  --ink:#10261c;
-  --ink-2:#2f4438;
-  --mute:#5f6f64;
+  --ink:#1c2b24;
+  --ink-2:#3d5c4a;
+  --mute:#6b8a78;
 
-  --grn-900:#0b3524;
-  --grn-800:#124430;
-  --grn-700:#17573a;
-  --grn-500:#2a7d53;
-  --grn-200:#bcd6c6;
+  --grn-900:#1a4731;
+  --grn-800:#27563c;
+  --grn-700:#2d7a52;
+  --grn-500:#3d9966;
+  --grn-200:#b8ddc9;
 
-  --gold:#c8a44d;
-  --gold-lt:#e8d9a8;
+  --gold:#b8952a;
+  --gold-lt:#f5e9c4;
 
-  --paper:#f1f3ed;
+  --paper:#f4f6f5;
   --card:#fff;
-  --rule:#dde3d7;
-  --rule-2:#eceee7;
+  --rule:#d4e4db;
+  --rule-2:#edf7f2;
 
-  --f-disp:'Archivo',ui-sans-serif,system-ui,sans-serif;
-  --f-body:'Public Sans',ui-sans-serif,system-ui,-apple-system,sans-serif;
-  --f-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',monospace;
+  --f-disp:Tahoma,Geneva,sans-serif;
+  --f-body:Tahoma,Geneva,sans-serif;
+  --f-mono:Tahoma,Geneva,sans-serif;
 
   --sp:clamp(14px,2.2vw,26px);
-  --r:3px;
-  --shadow:0 1px 2px rgba(16,38,28,.06),0 6px 18px -10px rgba(16,38,28,.18);
+  --r:8px;
+  --shadow:0 2px 12px rgba(26,71,49,.08);
 }
 
 *,*::before,*::after{box-sizing:border-box}
@@ -54,52 +54,69 @@ body{
 
 :focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 
-/* ───────────────────────────────────────────── masthead */
+/* ───────────────────────────────────────────── masthead
+   Mirrors the province dashboard header: diagonal green gradient,
+   white discs bleeding off the top corners that the crests sit on,
+   centred title with a gold lead phrase, and figure chips. */
 .masthead{
-  background:var(--grn-900);
-  color:#fff;
-  border-bottom:3px solid var(--gold);
+  background:linear-gradient(135deg,#27563c 0%,#4f7f58 55%,#5f8f67 100%);
+  padding:6px 34px;
+  position:relative;overflow:hidden;
 }
+.masthead::before,
+.masthead::after{
+  content:'';position:absolute;top:-30px;
+  width:170px;height:170px;border-radius:50%;
+  background:#fff;pointer-events:none;
+}
+.masthead::before{left:-50px}
+.masthead::after{right:-60px}
+
 .masthead__in{
-  max-width:1560px;margin:0 auto;
-  padding:20px var(--sp);
-  display:flex;align-items:center;gap:clamp(14px,2.4vw,30px);
+  width:100%;margin:0 auto;
+  display:grid;grid-template-columns:150px 1fr 150px;
+  align-items:center;gap:16px;
+  position:relative;z-index:1;
 }
-.masthead__crest{
-  width:78px;height:78px;flex:none;
-  object-fit:contain;padding:7px;
-  background:#fff;border-radius:50%;
-  box-shadow:0 0 0 2px var(--gold),0 2px 10px rgba(0,0,0,.28);
+.masthead__logo{
+  height:70px;width:auto;max-width:112px;
+  object-fit:contain;
+  background:transparent;border:0;box-shadow:none;padding:0;
 }
-.masthead__txt{flex:1;min-width:0;text-align:center}
+.masthead__logo--l{justify-self:start}
+.masthead__logo--r{justify-self:end}
+
+.masthead__centre{
+  grid-column:2;
+  display:flex;align-items:center;justify-content:center;
+  gap:20px;text-align:center;
+}
 .masthead__title{
-  margin:0;
-  font:800 clamp(19px,2.7vw,31px)/1.15 var(--f-disp);
-  letter-spacing:-.018em;
+  font:700 clamp(21px,2.65vw,34px)/1.05 var(--f-disp);
+  color:#fff;margin:0;
 }
+.masthead__title span{color:var(--gold-lt)}
 .masthead__sub{
-  margin:6px 0 0;
-  font-size:13.5px;color:var(--gold-lt);
+  margin:5px 0 0;
+  font-size:15px;letter-spacing:.35px;
+  color:rgba(255,255,255,.78);
 }
 
-.masthead__counts{display:flex;gap:clamp(12px,2vw,26px);flex:none}
-.mcount{
-  text-align:center;min-width:74px;
-  padding:0 clamp(6px,1vw,12px);
-  border-left:1px solid rgba(232,217,168,.28);
+.masthead__stats{display:flex;gap:10px;flex-shrink:0}
+.hstat{
+  background:rgba(255,255,255,.1);
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:6px;
+  padding:6px 16px;text-align:center;min-width:72px;
 }
-.mcount:first-child{border-left:0}
-.mcount__n{
-  display:block;
-  font:600 clamp(20px,2.4vw,28px)/1 var(--f-mono);
-  letter-spacing:-.03em;color:var(--gold);
+.hstat__n{
+  font:700 18px/1 var(--f-disp);color:#fff;
   font-variant-numeric:tabular-nums;
 }
-.mcount__l{
-  display:block;margin-top:6px;
-  font:600 9.5px/1.2 var(--f-mono);
-  letter-spacing:.14em;text-transform:uppercase;
-  color:var(--grn-200);
+.hstat__l{
+  margin-top:3px;
+  font-size:10px;letter-spacing:1.2px;text-transform:uppercase;
+  color:rgba(255,255,255,.65);
 }
 
 /* ───────────────────────────────────────────── shell */
@@ -420,14 +437,22 @@ body{
 
 /* ───────────────────────────────────────────── footer */
 .foot{
-  background:var(--grn-900);color:var(--grn-200);
-  border-top:3px solid var(--gold);
+  background:var(--grn-900);
+  text-align:center;
+  padding:10px 24px;
+  line-height:1.25;
   margin-top:12px;
 }
-.foot__in{max-width:1560px;margin:0 auto;padding:24px var(--sp)}
+.foot__in{max-width:1560px;margin:0 auto}
 .foot__in p{margin:0}
-.foot__in strong{color:#fff}
-.foot__meta{margin-top:7px;font:400 11.5px var(--f-mono);color:#7d9a89}
+.foot__in strong{
+  display:block;color:#fff;
+  font-size:13px;font-weight:700;letter-spacing:.4px;
+}
+.foot__meta{
+  display:block;margin-top:2px;
+  font-size:10px;color:rgba(255,255,255,.75);
+}
 
 /* ───────────────────────────────────────────── responsive */
 @media (max-width:1080px){
@@ -437,16 +462,16 @@ body{
   .charts{grid-template-columns:1fr}
   .layers{max-height:250px}
 }
-@media (max-width:820px){
-  .masthead__in{flex-wrap:wrap;justify-content:center;gap:14px}
-  .masthead__crest{width:54px;height:54px;order:1}
-  .masthead__txt{order:2;flex-basis:calc(100% - 150px)}
-  .masthead__counts{order:4;flex-basis:100%;justify-content:center}
-  .mcount{border-left:0}
-  .mcount:last-child{border-left:1px solid rgba(232,217,168,.28)}
+@media (max-width:900px){
+  .masthead__centre{flex-direction:column;gap:10px}
 }
-@media (max-width:620px){
-  .masthead__txt{flex-basis:100%;order:3}
+@media (max-width:640px){
+  .masthead{padding:6px 16px}
+  .masthead__in{grid-template-columns:70px 1fr 70px;gap:8px}
+  .masthead__logo{height:48px;max-width:58px}
+  .masthead__stats{display:none}
+  .masthead__title{font-size:20px}
+  .masthead__sub{font-size:11px}
   .ribbon__bar{height:34px}
   .card__plot{height:340px}
   .tbl__tools{width:100%}
