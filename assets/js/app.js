@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Statistical Dashboard of Land Use Plans
+   Hafizabad District Land Use Plan — dashboard
    Punjab Spatial Planning Authority
    ═══════════════════════════════════════════════════════════════ */
 (function () {
@@ -7,7 +7,7 @@
 
 /* Bump on every change. Check the live file matches by opening the
    browser console, or by searching the deployed app.js for this line. */
-const BUILD = 'hafizabad-dashboard 2026-08-04c';
+const BUILD = 'hafizabad-dashboard 2026-08-05a';
 console.info(BUILD);
 
 /* ─────────────────────────────────────────── palette
@@ -54,8 +54,15 @@ const S = {
   layers    : {},          // group -> L.geoJSON
   props     : [],          // every feature's properties, for live stats
   onGroups  : new Set(),
+  district  : 'all',
+  localGov  : 'all',
+  lgAreas   : null,        // local government boundaries, when supplied
+  pendingLgAssign: false,  // true if boundaries arrived before all parcel layers did
   cat       : 'all',
   luPick    : null,
+  index     : [],          // search index
+  sugg      : [],
+  suggAt    : -1,
   loaded    : 0,
   sortKey   : 'acres',
   sortDir   : -1,
@@ -99,6 +106,7 @@ function init(stats) {
     try { fn(); } catch (e) { console.error('stage failed: ' + name, e); }
   };
   stage('kpis',    paintKpis);
+  stage('filters', buildFilters);    // populates district/land-use selects + search index
   stage('layers',  paintLayerList);   // seeds S.onGroups — must precede the ribbon
   stage('ribbon',  paintRibbon);
   stage('map',     buildMap);
@@ -324,7 +332,10 @@ function loadLayer(group, file) {
 
       S.loaded++;
       countUp();
-      if (S.loaded === S.stats.manifest.length) refreshStats();
+      if (S.loaded === S.stats.manifest.length) {
+        refreshStats();
+        if (S.pendingLgAssign) { S.pendingLgAssign = false; assignLocalGov(); }
+      }
     })
     .catch(err => {
       console.error('layer ' + group, err);
@@ -334,9 +345,11 @@ function loadLayer(group, file) {
 }
 
 function visible(p) {
-  if (!S.onGroups.has(S.luGroup[p.lu])) return false;
-  if (S.cat !== 'all' && p.ct !== S.cat) return false;
-  if (S.luPick && p.lu !== S.luPick)     return false;
+  if (!S.onGroups.has(S.luGroup[p.lu]))     return false;
+  if (S.cat !== 'all' && p.ct !== S.cat)    return false;
+  if (S.luPick && p.lu !== S.luPick)        return false;
+  if (S.district !== 'all' && (p.d || S.stats.district) !== S.district) return false;
+  if (S.localGov !== 'all' && p.lg !== S.localGov) return false;
   return true;
 }
 
@@ -407,15 +420,24 @@ function soloGroup(g) {
   afterFilter();
 }
 
-function pickClass(lu) {
-  S.luPick = (S.luPick === lu) ? null : lu;
+// Direct setter — used by the Land Use select and search results, where
+// choosing the same value again should keep it selected, not toggle off.
+function setClassPick(lu) {
+  S.luPick = lu || null;
   if (S.luPick) {
     const g = S.luGroup[S.luPick];
-    if (!S.onGroups.has(g)) { S.onGroups.add(g); S.layers[g] && S.layers[g].addTo(map); }
+    if (g && !S.onGroups.has(g)) { S.onGroups.add(g); S.layers[g] && S.layers[g].addTo(map); }
     syncLayerBoxes();
   }
+  syncControls();
   afterFilter();
   markTable();
+}
+
+// Toggling wrapper — used by table rows and chart clicks, where clicking
+// the same item again clears the isolation.
+function pickClass(lu) {
+  setClassPick(S.luPick === lu ? null : lu);
   if (S.luPick) zoomToClass(S.luPick);
 }
 
@@ -457,6 +479,289 @@ function refreshStats() {
   $('#selArea').textContent  = nf(acres) + ' ac';
   $('#selShare').textContent = nf(100 * acres / S.stats.totals.acres, 2) + '%';
   $('#selMed').textContent   = med < 1 ? nf(med, 3) + ' ac' : nf(med, 2) + ' ac';
+}
+
+/* ═══════════════════════════════════════════ filters */
+function buildFilters() {
+  // District — the source layer carries one, but the control is wired
+  // for a merged multi-district layer without further changes.
+  const districts = [...new Set(S.props.map(p => p.d).filter(Boolean))];
+  if (!districts.length) districts.push(S.stats.district);
+  fill('#fDistrict', [['all', 'All districts']]
+    .concat(districts.sort().map(d => [d, d])));
+
+  // Land use — every class, with its parcel count.
+  fill('#fLanduse', [['all', 'All land uses']].concat(
+    S.stats.classes.slice()
+      .sort((a, b) => a.lu.localeCompare(b.lu))
+      .map(c => [c.lu, `${c.lu} (${nf(c.count)})`])));
+
+  fill('#fLocal', [['all', 'Not in source data']]);
+  loadLocalGov();
+  buildSearchIndex();
+}
+
+function fill(sel, pairs) {
+  const el = $(sel);
+  if (!el) return;
+  el.innerHTML = pairs
+    .map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ── local government ────────────────────────────────────────────
+   The source layer has no local-government, tehsil or union-council
+   attribute, so this cannot be derived from the data alone. Supply
+   boundaries as data/local_govt.geojson — any polygon layer whose
+   features carry a name (name / NAME / lg_name / Tehsil / UC) — and
+   each parcel is assigned by point-in-polygon on its centre, which
+   switches the filter on. Absent that file the control stays off
+   rather than showing a fabricated division.                        */
+function loadLocalGov() {
+  fetch('data/local_govt.geojson')
+    .then(r => r.ok ? r.json() : Promise.reject('absent'))
+    .then(gj => {
+      S.lgAreas = (gj.features || []).map(f => ({
+        name: String(f.properties && (f.properties.name || f.properties.NAME ||
+              f.properties.lg_name || f.properties.Tehsil || f.properties.UC) || 'Unnamed'),
+        rings: ringsOf(f.geometry)
+      })).filter(a => a.rings.length);
+      if (!S.lgAreas.length) return note('data/local_govt.geojson holds no usable polygons.');
+      if (S.loaded === S.stats.manifest.length) assignLocalGov();
+      else S.pendingLgAssign = true;
+    })
+    .catch(() => note(
+      'Local government boundaries are not in the source layer. Add ' +
+      '<code>data/local_govt.geojson</code> — a polygon layer with a name ' +
+      'on each feature — and this filter switches on automatically.'));
+}
+
+function ringsOf(g) {
+  if (!g) return [];
+  if (g.type === 'Polygon') return [g.coordinates];
+  if (g.type === 'MultiPolygon') return g.coordinates;
+  return [];
+}
+
+function inRing(x, y, ring) {          // ray casting
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    if ((yi > y) !== (yj > y) &&
+        x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function inPoly(x, y, poly) {
+  if (!inRing(x, y, poly[0])) return false;
+  for (let h = 1; h < poly.length; h++) if (inRing(x, y, poly[h])) return false;
+  return true;                          // outside every hole
+}
+
+function assignLocalGov() {
+  const stamp = (lyr) => lyr.eachLayer(l => {
+    const p = l.feature.properties;
+    if (p.lg) return;
+    const c = l.getBounds().getCenter();
+    for (const a of S.lgAreas) {
+      if (a.rings.some(poly => inPoly(c.lng, c.lat, poly))) { p.lg = a.name; return; }
+    }
+    p.lg = 'Outside mapped areas';
+  });
+  Object.values(S.layers).forEach(stamp);
+
+  const names = [...new Set(S.props.map(p => p.lg).filter(Boolean))].sort();
+  fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
+  const el = $('#fLocal');
+  if (el) el.disabled = false;
+  note('');
+  refreshStats();
+}
+
+function note(html) {
+  const el = $('#fNote');
+  if (!el) return;
+  el.innerHTML = html;
+  el.hidden = !html;
+}
+
+/* ═══════════════════════════════════════════ search
+   Tolerant matching over land use classes and named sites: exact,
+   prefix, word-prefix, substring, all-tokens, then edit distance so
+   "gravyard" still finds Graveyard.                                 */
+function norm(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function lev(a, b, cap) {              // bounded Levenshtein
+  if (Math.abs(a.length - b.length) > cap) return cap + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1,
+                        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > cap) return cap + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function subseq(q, t) {
+  let i = 0;
+  for (const ch of t) if (ch === q[i] && ++i === q.length) return true;
+  return false;
+}
+
+function score(q, text) {
+  const t = norm(text);
+  if (!q || !t) return 0;
+  if (t === q) return 1000;
+  if (t.startsWith(q)) return 860;
+  const words = t.split(' ');
+  if (words.some(w => w.startsWith(q))) return 720;
+  if (t.includes(q)) return 580;
+  const qs = q.split(' ');
+  if (qs.length > 1 && qs.every(x => t.includes(x))) return 460;
+  const cap = q.length <= 4 ? 1 : 2;
+  let best = 0;
+  for (const w of words) {
+    const d = lev(q, w, cap);
+    if (d <= cap) best = Math.max(best, 340 - d * 70);
+  }
+  if (best) return best;
+  if (subseq(q.replace(/ /g, ''), t.replace(/ /g, ''))) return 190;
+  return 0;
+}
+
+function buildSearchIndex() {
+  const idx = S.stats.classes.map(c => ({
+    kind : 'class',
+    label: c.lu,
+    sub  : `${GROUP_LABEL[c.group] || c.group} · ${nf(c.count)} parcels · ${nf(c.acres)} ac`,
+    lu   : c.lu,
+    w    : c.acres
+  }));
+
+  // Named sites, grouped so five "Brick Kiln" records read as one entry.
+  const byName = {};
+  (S.stats.named_sites || []).forEach(s => {
+    const k = s.name + '|' + s.lu;
+    const g = byName[k] || (byName[k] = { ...s, n: 0, acres: 0 });
+    g.n++; g.acres += s.acres;
+    if (s.acres >= (g.big || 0)) { g.big = s.acres; g.lat = s.lat; g.lon = s.lon; }
+  });
+  Object.values(byName).forEach(g => idx.push({
+    kind : 'site',
+    label: g.name,
+    sub  : `${g.lu} · ${nf(g.acres, 2)} ac` + (g.n > 1 ? ` · ${g.n} locations` : ''),
+    lu   : g.lu, lat: g.lat, lon: g.lon,
+    w    : g.acres
+  }));
+
+  S.index = idx;
+}
+
+function runSearch(raw) {
+  const q = norm(raw);
+  if (q.length < 2) return hideSugg();
+  S.sugg = S.index
+    .map(e => ({ e, s: score(q, e.label) + (e.kind === 'class' ? 25 : 0) }))
+    .filter(r => r.s > 0)
+    .sort((a, b) => b.s - a.s || b.e.w - a.e.w)
+    .slice(0, 9)
+    .map(r => r.e);
+  S.suggAt = -1;
+  renderSugg(q);
+}
+
+function renderSugg(q) {
+  const list = $('#fSuggest'), box = $('#fSearch');
+  if (!list) return;
+  if (!S.sugg.length) {
+    list.innerHTML = '<li class="ac__none">Nothing matches that.</li>';
+  } else {
+    list.innerHTML = S.sugg.map((e, i) => `
+      <li class="ac__i" role="option" data-i="${i}" aria-selected="false">
+        <i class="ac__sw" style="background:${S.colour[e.lu] || '#9aa79f'}"></i>
+        <span class="ac__b">
+          <span class="ac__t">${hilite(e.label, q)}</span>
+          <span class="ac__s">${esc(e.sub)}</span>
+        </span>
+        <span class="ac__k${e.kind === 'site' ? ' is-site' : ''}">${e.kind === 'site' ? 'Site' : 'Class'}</span>
+      </li>`).join('');
+    list.querySelectorAll('.ac__i').forEach(li =>
+      li.addEventListener('mousedown', ev => {
+        ev.preventDefault();
+        choose(+li.dataset.i);
+      }));
+  }
+  list.hidden = false;
+  if (box) box.setAttribute('aria-expanded', 'true');
+}
+
+function hilite(text, q) {
+  const i = norm(text).indexOf(q);
+  if (i < 0 || !q) return esc(text);
+  return esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + q.length)) +
+         '</mark>' + esc(text.slice(i + q.length));
+}
+
+function hideSugg() {
+  const list = $('#fSuggest'), box = $('#fSearch');
+  if (list) list.hidden = true;
+  if (box) box.setAttribute('aria-expanded', 'false');
+  S.sugg = []; S.suggAt = -1;
+}
+
+function moveSugg(step) {
+  if (!S.sugg.length) return;
+  S.suggAt = (S.suggAt + step + S.sugg.length) % S.sugg.length;
+  $$('#fSuggest .ac__i').forEach((li, i) => {
+    const on = i === S.suggAt;
+    li.classList.toggle('is-on', on);
+    li.setAttribute('aria-selected', on ? 'true' : 'false');
+    if (on) li.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+function choose(i) {
+  const e = S.sugg[i];
+  if (!e) return;
+  const box = $('#fSearch');
+  if (box) box.value = e.label;
+  hideSugg();
+
+  setClassPick(e.lu);
+
+  if (e.kind === 'site' && e.lat != null) {
+    map.setView([e.lat, e.lon], 16);
+    L.popup({ maxWidth: 320 })
+      .setLatLng([e.lat, e.lon])
+      .setContent(`<div class="pop__t">${esc(e.label)}</div>` +
+                  `<div class="pop__r"><span>Land use</span><span>${esc(e.lu)}</span></div>` +
+                  `<div class="pop__r"><span>Detail</span><span>${esc(e.sub)}</span></div>`)
+      .openOn(map);
+  } else {
+    zoomToClass(e.lu);
+  }
+}
+
+function syncControls() {
+  const set = (sel, v) => { const el = $(sel); if (el) el.value = v; };
+  set('#fDistrict', S.district);
+  set('#fLocal',    S.localGov);
+  set('#fLanduse',  S.luPick || 'all');
+  set('#fCategory', S.cat);
 }
 
 /* ═══════════════════════════════════════════ charts */
@@ -647,7 +952,7 @@ function csv() {
 /* ═══════════════════════════════════════════ wiring */
 function setCat(c) {
   S.cat = (S.cat === c) ? 'all' : c;
-  $$('[data-cat]').forEach(b => b.classList.toggle('is-on', b.dataset.cat === S.cat));
+  syncControls();
   afterFilter();
 }
 
@@ -657,9 +962,6 @@ function wire() {
     BASES[b.dataset.base].addTo(map);
     $$('[data-base]').forEach(x => x.classList.toggle('is-on', x === b));
   }));
-
-  $$('[data-cat]').forEach(b =>
-    b.addEventListener('click', () => setCat(b.dataset.cat)));
 
   $('#btnAll').addEventListener('click', () => {
     S.onGroups = new Set(Object.keys(S.stats.groups));
@@ -687,17 +989,50 @@ function wire() {
     if (S.sortDir === 1) th.classList.add('is-asc');
     paintTable();
   }));
+
+  /* ── filter bar: District / Local Govt / Land Use / Category / search ── */
+  const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
+
+  on('#fDistrict', 'change', e => { S.district = e.target.value; afterFilter(); });
+  on('#fLocal',    'change', e => { S.localGov = e.target.value; afterFilter(); });
+
+  on('#fLanduse', 'change', e => {
+    setClassPick(e.target.value === 'all' ? null : e.target.value);
+    if (S.luPick) zoomToClass(S.luPick);
+  });
+
+  // Direct set on the select — no toggle, since re-picking the same
+  // option in a dropdown should keep it selected rather than clear it.
+  on('#fCategory', 'change', e => { S.cat = e.target.value; afterFilter(); });
+
+  on('#fSearch', 'input', e => runSearch(e.target.value));
+  on('#fSearch', 'focus', e => { if (norm(e.target.value).length >= 2) runSearch(e.target.value); });
+  on('#fSearch', 'blur',  () => setTimeout(hideSugg, 120));  // let a click on a result land first
+  on('#fSearch', 'keydown', e => {
+    if (e.key === 'ArrowDown')      { e.preventDefault(); moveSugg(1); }
+    else if (e.key === 'ArrowUp')   { e.preventDefault(); moveSugg(-1); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (S.sugg.length) choose(S.suggAt >= 0 ? S.suggAt : 0);
+    } else if (e.key === 'Escape') { hideSugg(); e.target.blur(); }
+  });
+
+  on('#fReset', 'click', resetAll);
 }
 
 function resetAll() {
   S.onGroups = new Set(Object.keys(S.stats.groups));
   S.cat = 'all';
+  S.district = 'all';
+  S.localGov = 'all';
   S.luPick = null;
   S.query = '';
-  $('#tblSearch').value = '';
+  const tblSearchEl = $('#tblSearch'); if (tblSearchEl) tblSearchEl.value = '';
+  const fSearchEl = $('#fSearch');     if (fSearchEl) fSearchEl.value = '';
+  hideSugg();
   Object.entries(S.layers).forEach(([, l]) => l.addTo(map));
-  $$('[data-cat]').forEach(b => b.classList.toggle('is-on', b.dataset.cat === 'all'));
   syncLayerBoxes();
+  syncControls();
   afterFilter();
   paintTable();
   const b = S.stats.bbox;
