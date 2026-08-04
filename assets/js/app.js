@@ -134,9 +134,6 @@ function paintKpis() {
   setText('#kpiAvg',      nf(t.acres / t.features, 1));
   setText('#kpiProposed', prop ? nf(prop.pct, 1) : '0');
   setText('#kpiFarm',     farm ? nf(100 * farm.acres / t.acres, 1) : '0');
-  // masthead figure chips
-  setText('#mcParcels',   nf(t.features));
-  setText('#mcClasses',   t.classes);
   // figures carried by the earlier layout, if this page still has them
   setText('#kpiParcels',  nf(t.features));
   setText('#kpiClasses',  t.classes);
@@ -496,7 +493,9 @@ function buildFilters() {
       .sort((a, b) => a.lu.localeCompare(b.lu))
       .map(c => [c.lu, `${c.lu} (${nf(c.count)})`])));
 
-  fill('#fLocal', [['all', 'Not in source data']]);
+  fill('#fLocal', [['all', 'Not available']]);
+  const fLocalEl = $('#fLocal');
+  if (fLocalEl) fLocalEl.title = 'Tehsil-level boundaries are not in the source data.';
   loadLocalGov();
   buildSearchIndex();
 }
@@ -579,7 +578,12 @@ function assignLocalGov() {
   const names = [...new Set(S.props.map(p => p.lg).filter(Boolean))].sort();
   fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
   const el = $('#fLocal');
-  if (el) el.disabled = false;
+  if (el) {
+    el.disabled = false;
+    el.removeAttribute('title');
+    const pill = el.closest('.fld');
+    if (pill) pill.classList.remove('fld--disabled');
+  }
   note('');
   refreshStats();
 }
@@ -762,6 +766,16 @@ function syncControls() {
   set('#fLocal',    S.localGov);
   set('#fLanduse',  S.luPick || 'all');
   set('#fCategory', S.cat);
+  markActive('#fDistrict', S.district !== 'all');
+  markActive('#fLocal',    S.localGov !== 'all');
+  markActive('#fLanduse',  !!S.luPick);
+  markActive('#fCategory', S.cat !== 'all');
+}
+
+function markActive(sel, on) {
+  const el = $(sel);
+  const pill = el && el.closest('.fld');
+  if (pill) pill.classList.toggle('is-active', !!on);
 }
 
 /* ═══════════════════════════════════════════ charts */
@@ -993,8 +1007,16 @@ function wire() {
   /* ── filter bar: District / Local Govt / Land Use / Category / search ── */
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
-  on('#fDistrict', 'change', e => { S.district = e.target.value; afterFilter(); });
-  on('#fLocal',    'change', e => { S.localGov = e.target.value; afterFilter(); });
+  on('#fDistrict', 'change', e => {
+    S.district = e.target.value;
+    markActive('#fDistrict', S.district !== 'all');
+    afterFilter();
+  });
+  on('#fLocal', 'change', e => {
+    S.localGov = e.target.value;
+    markActive('#fLocal', S.localGov !== 'all');
+    afterFilter();
+  });
 
   on('#fLanduse', 'change', e => {
     setClassPick(e.target.value === 'all' ? null : e.target.value);
@@ -1003,7 +1025,11 @@ function wire() {
 
   // Direct set on the select — no toggle, since re-picking the same
   // option in a dropdown should keep it selected rather than clear it.
-  on('#fCategory', 'change', e => { S.cat = e.target.value; afterFilter(); });
+  on('#fCategory', 'change', e => {
+    S.cat = e.target.value;
+    markActive('#fCategory', S.cat !== 'all');
+    afterFilter();
+  });
 
   on('#fSearch', 'input', e => runSearch(e.target.value));
   on('#fSearch', 'focus', e => { if (norm(e.target.value).length >= 2) runSearch(e.target.value); });
