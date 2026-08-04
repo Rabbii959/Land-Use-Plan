@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hafizabad Land Use Plan — Statistical Dashboard | Punjab Spatial Planning Authority</title>
+<meta name="description" content="Interactive map and statistical dashboard for the Hafizabad District Land Use Plan — 16,980 parcels across 60 land use classes, Punjab Spatial Planning Authority.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<a class="skip" href="#map">Skip to map</a>
+
+<!-- ══════════════════════════════════════ masthead -->
+<header class="masthead">
+  <div class="masthead__in">
+    <img class="masthead__crest" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/GOVT-LOGO-1-150x150.png" alt="Government of Punjab" onerror="this.style.display='none'">
+    <div class="masthead__txt">
+      <p class="masthead__eyebrow">Government of Punjab &middot; Punjab Spatial Planning Authority</p>
+      <h1 class="masthead__title">Hafizabad District Land Use Plan</h1>
+      <p class="masthead__sub">Statistical dashboard &amp; spatial viewer — Land Use Classification &amp; Zoning</p>
+    </div>
+    <img class="masthead__crest" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/PMU-LOGO-1-150x150.png" alt="Programme Management Unit" onerror="this.style.display='none'">
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ══════════════════════════════════════ key figures -->
+  <section class="kpis" aria-label="Key figures">
+    <div class="kpi">
+      <span class="kpi__n" id="kpiAcres">—</span>
+      <span class="kpi__u">acres</span>
+      <span class="kpi__l">Planned area</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__n" id="kpiKm">—</span>
+      <span class="kpi__u">km²</span>
+      <span class="kpi__l">Land area</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__n" id="kpiParcels">—</span>
+      <span class="kpi__u">polygons</span>
+      <span class="kpi__l">Mapped parcels</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__n" id="kpiClasses">—</span>
+      <span class="kpi__u">classes</span>
+      <span class="kpi__l">Land uses recorded</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__n" id="kpiProposed">—</span>
+      <span class="kpi__u">%</span>
+      <span class="kpi__l">Area newly proposed</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════ signature: the district as one bar -->
+  <section class="ribbon" aria-labelledby="ribbonH">
+    <div class="ribbon__head">
+      <h2 class="h-sec" id="ribbonH">The whole district, to scale</h2>
+      <p class="ribbon__note">Every acre in the plan, ordered by share. Select a band to filter the map and the tables below.</p>
+    </div>
+    <div class="ribbon__rows" id="ribbon" role="group" aria-label="Land use share of district area"></div>
+    <div class="ribbon__read" id="ribbonRead">
+      <span class="ribbon__reset" id="ribbonReset" hidden>Clear selection</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════ map + panel -->
+  <section class="board" aria-labelledby="mapH">
+    <div class="board__map">
+      <div class="board__bar">
+        <h2 class="h-sec" id="mapH">Land use map</h2>
+        <div class="seg" role="group" aria-label="Base map">
+          <button class="seg__b is-on" data-base="street">Street</button>
+          <button class="seg__b" data-base="satellite">Satellite</button>
+          <button class="seg__b" data-base="plain">Plain</button>
+        </div>
+      </div>
+      <div id="map" tabindex="0"></div>
+      <div class="board__foot">
+        <span id="mapCount">Loading parcels…</span>
+        <button class="lnk" id="btnReset">Reset view</button>
+      </div>
+    </div>
+
+    <aside class="board__side">
+      <div class="panel">
+        <h3 class="h-pan">Category</h3>
+        <div class="seg seg--full" role="group" aria-label="Plan category">
+          <button class="seg__b is-on" data-cat="all">All</button>
+          <button class="seg__b" data-cat="Existing">Existing</button>
+          <button class="seg__b" data-cat="Proposed">Proposed</button>
+        </div>
+      </div>
+
+      <div class="panel panel--grow">
+        <div class="h-pan-row">
+          <h3 class="h-pan">Map layers</h3>
+          <button class="lnk" id="btnAll">All on</button>
+        </div>
+        <div id="layers" class="layers"></div>
+      </div>
+
+      <div class="panel">
+        <h3 class="h-pan">Current selection</h3>
+        <dl class="mini" id="selStats">
+          <div><dt>Parcels</dt><dd id="selCount">—</dd></div>
+          <div><dt>Area</dt><dd id="selArea">—</dd></div>
+          <div><dt>Share of district</dt><dd id="selShare">—</dd></div>
+          <div><dt>Median parcel</dt><dd id="selMed">—</dd></div>
+        </dl>
+      </div>
+    </aside>
+  </section>
+
+  <!-- ══════════════════════════════════════ charts -->
+  <section class="charts">
+    <div class="card">
+      <h2 class="h-sec">Largest land uses by area</h2>
+      <p class="card__note">Top 15 classes on a logarithmic scale — farmland is roughly twenty times the next largest use, so a linear axis would leave everything else invisible. Select a bar to isolate that class on the map.</p>
+      <div class="card__plot"><canvas id="chartTop"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2 class="h-sec">Existing against proposed</h2>
+      <p class="card__note">How much of the plan records what is already on the ground, and how much is new zoning.</p>
+      <div class="card__plot card__plot--sm"><canvas id="chartCat"></canvas></div>
+    </div>
+
+    <div class="card card--wide">
+      <h2 class="h-sec">Fragmentation: parcel count against average size</h2>
+      <p class="card__note">Classes to the upper left are many small parcels — the fine grain of settlement. Classes to the lower right are few, large holdings.</p>
+      <div class="card__plot"><canvas id="chartFrag"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════ table -->
+  <section class="card card--wide">
+    <div class="tbl__bar">
+      <div>
+        <h2 class="h-sec">Land use classification table</h2>
+        <p class="card__note">All 60 classes. Select a column heading to sort.</p>
+      </div>
+      <div class="tbl__tools">
+        <input type="search" id="tblSearch" class="inp" placeholder="Filter classes…" aria-label="Filter land use classes">
+        <button class="btn" id="btnCsv">Download CSV</button>
+      </div>
+    </div>
+    <div class="tbl__scroll">
+      <table class="tbl" id="tbl">
+        <thead>
+          <tr>
+            <th data-k="lu" class="is-txt">Land use class</th>
+            <th data-k="group" class="is-txt">Layer</th>
+            <th data-k="category" class="is-txt">Category</th>
+            <th data-k="count">Parcels</th>
+            <th data-k="acres" class="is-sorted">Area (acres)</th>
+            <th data-k="sqkm">Area (km²)</th>
+            <th data-k="pct">Share</th>
+            <th data-k="avg">Avg parcel (ac)</th>
+          </tr>
+        </thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════ method -->
+  <section class="card card--wide note">
+    <h2 class="h-sec">About these figures</h2>
+    <p>Areas on this dashboard are computed from the polygon geometry itself, on the WGS 84 ellipsoid, with interior rings subtracted. They are not taken from the <code>Area_SqKm</code> attribute in the source file, which returns zero for 11 of the 60 classes — including every urban block — and does not sum to the district's known extent. The geometric total of <strong>2,358.9 km²</strong> falls within 0.4% of Hafizabad's gazetted area of 2,367 km², which is the check that the method is sound.</p>
+    <p>Geometry has been generalised for browser delivery using Douglas–Peucker at a tolerance of roughly 5 metres, reducing 536,288 vertices to 249,490. All 16,980 parcels are retained; areas and counts are computed from the full-resolution source before generalisation, so no figure on this page is affected by it.</p>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot__in">
+    <p><strong>Punjab Spatial Planning Authority</strong> — Local Government &amp; Community Development Department, Government of Punjab</p>
+    <p class="foot__meta">Source layer: Hafizabad district land use plan, Esri feature set, WGS 84 (EPSG:4326) · 16,980 polygons · 60 classes</p>
+  </div>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

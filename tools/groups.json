@@ -1,0 +1,78 @@
+{
+  "residential": [
+    "Existing Settlement",
+    "Residential Urban Block",
+    "Residential Zone",
+    "Approved Housing Scheme",
+    "Katchi Abadis",
+    "Gawala Colony"
+  ],
+  "commercial": [
+    "Commercial",
+    "Commercial Urban Block",
+    "Commercial Zone",
+    "CBD Zone",
+    "Mixed Use Zone",
+    "Economic Zone"
+  ],
+  "industrial": [
+    "Industrial",
+    "Industrial Urban Block",
+    "Industrial Zone",
+    "Agro Based Industry",
+    "Agro Industry Zone",
+    "Specialized Industrial Zone",
+    "Cottage Industrial Zone",
+    "Brick Kiln",
+    "Warehouse and Freight Terminal",
+    "IT Neighbourhood"
+  ],
+  "transport": [
+    "Transportation Network",
+    "Farm to Market Road",
+    "Road Widening",
+    "Structure Plan Road",
+    "Bypass or Ring Road",
+    "Railway Station",
+    "Transport Terminal"
+  ],
+  "agriculture": [
+    "Agriculture Area",
+    "Agriculture Zone AUD",
+    "Orchard",
+    "Livestock Farming",
+    "Grassland"
+  ],
+  "amenities": [
+    "Educational Institution - Public",
+    "Educational Institution - Private",
+    "Educational Neighbourhood",
+    "Educational Institutional Zone",
+    "Health Institution - Public",
+    "Health Institution - Private",
+    "Health Neighbourhood",
+    "Health Zone",
+    "Public Building and Govt Office",
+    "Institutional Zone",
+    "Religious Building",
+    "Graveyard",
+    "Waste Water Treatment Plant",
+    "Disposal Site"
+  ],
+  "environment": [
+    "Water Body",
+    "Park and Open Spaces",
+    "City Park and Open Spaces",
+    "Green Buffer Zone",
+    "Oil Depot Buffer Zone",
+    "Recreational Zone"
+  ],
+  "regulatory": [
+    "List A Abutting",
+    "Notified Area",
+    "State Land",
+    "Vacant Area",
+    "Natural Growth Boundary",
+    "Relocation Zone"
+  ]
+}
