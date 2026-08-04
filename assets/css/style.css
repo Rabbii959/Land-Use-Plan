@@ -236,13 +236,6 @@ body{
   margin-top:2px;font-size:11.5px;color:var(--mute);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.ac__k{
-  flex:none;font:700 9.5px var(--f-body);
-  letter-spacing:.8px;text-transform:uppercase;
-  color:var(--grn-700);background:var(--rule-2);
-  padding:3px 7px;border-radius:20px;
-}
-.ac__k.is-site{color:#7a6412;background:var(--gold-lt)}
 .ac__none{padding:12px 10px;font-size:13px;color:var(--mute)}
 
 @media (max-width:680px){
@@ -414,24 +407,63 @@ body{
   min-width:190px;
 }
 
-/* ───────────────────────────────────────────── layer list */
-.layers{
-  display:flex;flex-direction:column;gap:2px;
-  max-height:330px;overflow-y:auto;
+/* ───────────────────────────────────────────── legend tree
+   Two levels: a Land Use Class row (chevron + checkbox + swatch)
+   that expands to show its individual land uses, each with its own
+   checkbox and swatch, indented beneath. */
+.legend{
+  display:flex;flex-direction:column;
+  max-height:420px;overflow-y:auto;
   margin:0 -6px;padding:0 6px;
 }
-.lay{
-  display:flex;align-items:center;gap:9px;
-  padding:6px 7px;border-radius:var(--r);
-  cursor:pointer;
+
+.lgroup{border-bottom:1px solid var(--rule-2)}
+.lgroup:last-child{border-bottom:0}
+
+.lgroup__head{display:flex;align-items:center;gap:2px;padding:2px 0}
+
+.lgroup__chev{
+  flex:none;width:22px;height:22px;
+  display:flex;align-items:center;justify-content:center;
+  border:0;background:none;color:var(--grn-700);
+  border-radius:5px;cursor:pointer;
+  transition:transform .15s ease,background .12s ease;
+}
+.lgroup__chev:hover{background:var(--rule-2)}
+.lgroup__chev svg{transition:transform .15s ease}
+.lgroup__chev[aria-expanded="true"] svg{transform:rotate(90deg)}
+
+.lgroup__row{
+  flex:1;display:flex;align-items:center;gap:9px;
+  padding:7px 7px 7px 2px;border-radius:var(--r);
+  cursor:pointer;min-width:0;
   transition:background .12s ease;
 }
-.lay:hover{background:var(--rule-2)}
-.lay input{accent-color:var(--grn-700);width:14px;height:14px;flex:none;cursor:pointer}
-.lay__sw{width:13px;height:13px;border-radius:2px;flex:none;box-shadow:inset 0 0 0 1px rgba(16,38,28,.22)}
-.lay__nm{flex:1;font-size:13px;text-transform:capitalize}
-.lay__n{font:500 11px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
-.lay.is-off .lay__nm,.lay.is-off .lay__n{opacity:.42}
+.lgroup__row:hover{background:var(--rule-2)}
+.lgroup__box{accent-color:var(--grn-700);width:15px;height:15px;flex:none;cursor:pointer}
+.lgroup__sw{width:14px;height:14px;border-radius:3px;flex:none;box-shadow:inset 0 0 0 1px rgba(16,38,28,.22)}
+.lgroup__nm{flex:1;font:700 13.5px var(--f-body);color:var(--ink);min-width:0}
+.lgroup__n{font:600 11px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
+
+.lchildren{display:flex;flex-direction:column;padding:0 0 4px 22px}
+.lchild__row{
+  display:flex;align-items:center;gap:9px;
+  padding:5px 7px;border-radius:var(--r);
+  cursor:pointer;min-width:0;
+  transition:background .12s ease;
+}
+.lchild__row:hover{background:var(--rule-2)}
+.lchild__box{accent-color:var(--grn-700);width:13px;height:13px;flex:none;cursor:pointer}
+.lchild__sw{width:11px;height:11px;border-radius:2px;flex:none;box-shadow:inset 0 0 0 1px rgba(16,38,28,.22)}
+.lchild__nm{flex:1;font-size:12.5px;color:var(--ink-2);min-width:0}
+.lchild__n{font:500 10.5px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
+
+/* dim a row when its box is unchecked — toggled by JS, not :has(),
+   for the same browser-support reasons as the filter pills above */
+.lgroup__row.is-off .lgroup__nm,
+.lgroup__row.is-off .lgroup__n{opacity:.45}
+.lchild__row.is-off .lchild__nm,
+.lchild__row.is-off .lchild__n{opacity:.42}
 
 /* ───────────────────────────────────────────── mini stats */
 .mini{margin:12px 0 0;display:flex;flex-direction:column;gap:0}
@@ -572,7 +604,7 @@ body{
   .board__side{flex-direction:row;flex-wrap:wrap}
   .board__side .panel{flex:1 1 260px}
   .charts{grid-template-columns:1fr}
-  .layers{max-height:250px}
+  .legend{max-height:280px}
 }
 @media (max-width:900px){
   .masthead__centre{flex-direction:column;gap:10px}
