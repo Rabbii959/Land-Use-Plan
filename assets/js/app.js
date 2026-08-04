@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Hafizabad District Land Use Plan — dashboard
+   Statistical Dashboard of Land Use Plans
    Punjab Spatial Planning Authority
    ═══════════════════════════════════════════════════════════════ */
 (function () {
