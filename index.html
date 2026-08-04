@@ -24,10 +24,6 @@
         <h1 class="masthead__title"><span>Statistical Dashboard</span> of District Land Use Plans of Punjab</h1>
         <div class="masthead__sub">Hafizabad District — Land Use Classification &amp; Zoning</div>
       </div>
-      <div class="masthead__stats">
-        <div class="hstat"><div class="hstat__n" id="mcParcels">—</div><div class="hstat__l">Parcels</div></div>
-        <div class="hstat"><div class="hstat__n" id="mcClasses">—</div><div class="hstat__l">Land Uses</div></div>
-      </div>
     </div>
 
     <img class="masthead__logo masthead__logo--r" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/PMU-LOGO-1-150x150.png" alt="PMU Logo" onerror="this.style.display='none'">
@@ -43,8 +39,8 @@
         <label class="fld__l" for="fDistrict">District</label>
         <select class="sel" id="fDistrict"></select>
       </div>
-      <div class="fld">
-        <label class="fld__l" for="fLocal">Local Government</label>
+      <div class="fld fld--disabled">
+        <label class="fld__l" for="fLocal">Local Govt</label>
         <select class="sel" id="fLocal" disabled></select>
       </div>
       <div class="fld">
@@ -60,17 +56,18 @@
         </select>
       </div>
 
-      <div class="fld fld--grow">
-        <label class="fld__l" for="fSearch">Search land uses &amp; named sites</label>
+      <div class="fld fld--grow fld--search">
+        <label class="fld__l" for="fSearch">Search</label>
         <div class="ac">
           <input class="sel sel--inp" id="fSearch" type="search" autocomplete="off"
                  role="combobox" aria-expanded="false" aria-autocomplete="list"
-                 aria-controls="fSuggest" placeholder="Try “rice mill”, “gravyard”, “edu”…">
+                 aria-controls="fSuggest" aria-label="Search land uses and named sites"
+                 placeholder="Try “rice mill”, “gravyard”, “edu”…">
           <ul class="ac__list" id="fSuggest" role="listbox" aria-label="Search results" hidden></ul>
         </div>
       </div>
 
-      <button class="btn btn--quiet" id="fReset">Reset filters</button>
+      <button class="btn btn--quiet" id="fReset">Reset</button>
     </div>
     <p class="filters__note" id="fNote" hidden></p>
   </section>
