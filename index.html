@@ -61,8 +61,8 @@
         <div class="ac">
           <input class="sel sel--inp" id="fSearch" type="search" autocomplete="off"
                  role="combobox" aria-expanded="false" aria-autocomplete="list"
-                 aria-controls="fSuggest" aria-label="Search land uses and named sites"
-                 placeholder="Try “rice mill”, “gravyard”, “edu”…">
+                 aria-controls="fSuggest" aria-label="Search land use classes"
+                 placeholder="Try “gravyard”, “health”, “educ”…">
           <ul class="ac__list" id="fSuggest" role="listbox" aria-label="Search results" hidden></ul>
         </div>
       </div>
@@ -101,18 +101,6 @@
     </div>
   </section>
 
-  <!-- ══════════════════════════════════════ signature: the district as one bar -->
-  <section class="ribbon" aria-labelledby="ribbonH">
-    <div class="ribbon__head">
-      <h2 class="h-sec" id="ribbonH">The whole district, to scale</h2>
-      <p class="ribbon__note">Every acre in the plan, ordered by share. Select a band to filter the map and the tables below.</p>
-    </div>
-    <div class="ribbon__rows" id="ribbon" role="group" aria-label="Land use share of district area"></div>
-    <div class="ribbon__read" id="ribbonRead">
-      <span class="ribbon__reset" id="ribbonReset" hidden>Clear selection</span>
-    </div>
-  </section>
-
   <!-- ══════════════════════════════════════ map + panel -->
   <section class="board" aria-labelledby="mapH">
     <div class="board__map">
@@ -134,10 +122,10 @@
     <aside class="board__side">
       <div class="panel panel--grow">
         <div class="h-pan-row">
-          <h3 class="h-pan">Map layers</h3>
+          <h3 class="h-pan">Land use classes</h3>
           <button class="lnk" id="btnAll">All on</button>
         </div>
-        <div id="layers" class="layers"></div>
+        <div id="layers" class="legend" role="tree" aria-label="Land use classes"></div>
       </div>
 
       <div class="panel">
@@ -150,6 +138,18 @@
         </dl>
       </div>
     </aside>
+  </section>
+
+  <!-- ══════════════════════════════════════ signature: the district as one bar -->
+  <section class="ribbon" aria-labelledby="ribbonH">
+    <div class="ribbon__head">
+      <h2 class="h-sec" id="ribbonH">The whole district, to scale</h2>
+      <p class="ribbon__note">Every acre in the plan, ordered by share. Select a band to filter the map and the tables below.</p>
+    </div>
+    <div class="ribbon__rows" id="ribbon" role="group" aria-label="Land use share of district area"></div>
+    <div class="ribbon__read" id="ribbonRead">
+      <span class="ribbon__reset" id="ribbonReset" hidden>Clear selection</span>
+    </div>
   </section>
 
   <!-- ══════════════════════════════════════ charts -->
