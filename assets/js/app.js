@@ -101,11 +101,16 @@ function init(stats) {
 function paintKpis() {
   const t = S.stats.totals;
   const prop = S.stats.categories.find(c => c.name === 'Proposed');
-  $('#kpiAcres').textContent   = nf(t.acres);
-  $('#kpiKm').textContent      = nf(t.sqkm, 1);
-  $('#kpiParcels').textContent = nf(t.features);
-  $('#kpiClasses').textContent = t.classes;
+  const farm = groupTotals().find(g => g.g === 'agriculture');
+  $('#kpiAcres').textContent    = nf(t.acres);
+  $('#kpiKm').textContent       = nf(t.sqkm, 1);
+  $('#kpiAvg').textContent      = nf(t.acres / t.features, 1);
   $('#kpiProposed').textContent = prop ? nf(prop.pct, 1) : '0';
+  $('#kpiFarm').textContent     = farm ? nf(100 * farm.acres / t.acres, 1) : '0';
+  // masthead counters, matching the province dashboard's header block
+  const mp = $('#mcParcels'), mc = $('#mcClasses');
+  if (mp) mp.textContent = nf(t.features);
+  if (mc) mc.textContent = t.classes;
 }
 
 /* ═══════════════════════════════════════════ share ribbon
