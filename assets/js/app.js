@@ -53,7 +53,7 @@ const S = {
   luGroup   : {},          // land use class -> layer group
   layers    : {},          // group -> L.geoJSON
   props     : [],          // every feature's properties, for live stats
-  onGroups  : new Set(),
+  offClasses: new Set(),   // individual land use classes toggled off in the legend
   district  : 'all',
   localGov  : 'all',
   lgAreas   : null,        // local government boundaries, when supplied
@@ -107,7 +107,7 @@ function init(stats) {
   };
   stage('kpis',    paintKpis);
   stage('filters', buildFilters);    // populates district/land-use selects + search index
-  stage('layers',  paintLayerList);   // seeds S.onGroups — must precede the ribbon
+  stage('layers',  paintLayerList);   // must precede the ribbon (paints group boxes it reads)
   stage('ribbon',  paintRibbon);
   stage('map',     buildMap);
   stage('charts',  paintCharts);
@@ -199,10 +199,12 @@ function paintRibbon() {
 function readRibbon() {
   const read = $('#ribbonRead');
   const reset = $('#ribbonReset');
-  const on = Array.from(S.onGroups);
-  const parts = groupTotals().filter(d => S.onGroups.has(d.g));
-  const acres = parts.reduce((s, d) => s + d.acres, 0);
-  const cnt   = parts.reduce((s, d) => s + d.count, 0);
+
+  const visibleClasses = S.stats.classes.filter(c => !S.offClasses.has(c.lu));
+  const acres = visibleClasses.reduce((s, c) => s + c.acres, 0);
+  const cnt   = visibleClasses.reduce((s, c) => s + c.count, 0);
+  const anyOnGroups = groupTotals().filter(d =>
+    (S.stats.groups[d.g] || []).some(lu => !S.offClasses.has(lu)));
 
   read.querySelectorAll('.ribbon__item').forEach(n => n.remove());
 
@@ -214,53 +216,155 @@ function readRibbon() {
     frag.appendChild(s);
   };
 
-  if (on.length === 1) {
-    const g = on[0];
+  if (anyOnGroups.length === 1) {
+    const g = anyOnGroups[0].g;
     add(`<i class="ribbon__sw" style="background:${GROUP_HUE[g]}"></i>` +
         `${GROUP_LABEL[g] || g}`);
   } else {
-    add(`Showing <b>${on.length}</b> of 8 layers`);
+    add(`Showing <b>${anyOnGroups.length}</b> of 8 layers`);
   }
   add(`<b>${nf(acres)}</b> acres`);
   add(`<b>${nf(100 * acres / S.stats.totals.acres, 1)}%</b> of district`);
   add(`<b>${nf(cnt)}</b> parcels`);
 
   read.insertBefore(frag, reset);
-  reset.hidden = (on.length === 8 && !S.luPick && S.cat === 'all');
+  reset.hidden = (S.offClasses.size === 0 && !S.luPick && S.cat === 'all' &&
+                  S.district === 'all' && S.localGov === 'all');
 
   $$('.ribbon__bar').forEach(bar => {
-    const solo = on.length === 1;
+    const solo = anyOnGroups.length === 1;
     bar.classList.toggle('is-picked', solo);
     bar.querySelectorAll('.ribbon__seg').forEach(seg =>
-      seg.classList.toggle('is-on', S.onGroups.has(seg.dataset.group)));
+      seg.classList.toggle('is-on', anyOnGroups.some(d => d.g === seg.dataset.group)));
   });
 }
 
 /* ═══════════════════════════════════════════ layer list */
+/* ═══════════════════════════════════════════ legend tree
+   Two levels: a Land Use Class (e.g. "Residential") expands to show
+   its individual land uses, each with its own checkbox. The group
+   checkbox is tri-state — checked, unchecked, or indeterminate when
+   some but not all of its classes are on. */
+const GROUP_BOX = {};   // group key -> its checkbox element
+const GROUP_ROW = {};   // group key -> its row label element
+const CLASS_BOX = {};   // land use class -> its checkbox element
+const CLASS_ROW = {};   // land use class -> its row label element
+
+const CHEV_SVG =
+  '<svg viewBox="0 0 8 8" width="8" height="8" aria-hidden="true">' +
+  '<path d="M1 .5 L6.5 4 L1 7.5" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
 function paintLayerList() {
   const host = $('#layers');
   host.innerHTML = '';
+
   groupTotals().forEach(d => {
+    const g = d.g;
+    const classes = (S.stats.groups[g] || [])
+      .map(lu => S.stats.classes.find(c => c.lu === lu))
+      .filter(Boolean)
+      .sort((a, b) => b.acres - a.acres);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'lgroup';
+    wrap.dataset.group = g;
+    wrap.setAttribute('role', 'group');
+
+    const head = document.createElement('div');
+    head.className = 'lgroup__head';
+
+    const chev = document.createElement('button');
+    chev.type = 'button';
+    chev.className = 'lgroup__chev';
+    chev.setAttribute('aria-expanded', 'true');
+    chev.setAttribute('aria-label', 'Collapse ' + (GROUP_LABEL[g] || g));
+    chev.innerHTML = CHEV_SVG;
+
     const lab = document.createElement('label');
-    lab.className = 'lay';
+    lab.className = 'lgroup__row';
+    lab.dataset.group = g;
     lab.innerHTML =
-      `<input type="checkbox" checked data-group="${d.g}">` +
-      `<i class="lay__sw" style="background:${GROUP_HUE[d.g] || '#9aa79f'}"></i>` +
-      `<span class="lay__nm">${GROUP_LABEL[d.g] || d.g}</span>` +
-      `<span class="lay__n">${nf(d.count)}</span>`;
-    lab.querySelector('input').addEventListener('change', e => {
-      toggleGroup(d.g, e.target.checked);
-      lab.classList.toggle('is-off', !e.target.checked);
+      '<input type="checkbox" class="lgroup__box" checked>' +
+      `<i class="lgroup__sw" style="background:${GROUP_HUE[g] || '#9aa79f'}"></i>` +
+      `<span class="lgroup__nm">${esc(GROUP_LABEL[g] || g)}</span>` +
+      `<span class="lgroup__n">${nf(d.count)}</span>`;
+
+    head.append(chev, lab);
+    wrap.appendChild(head);
+
+    const kids = document.createElement('div');
+    kids.className = 'lchildren';
+    kids.setAttribute('role', 'group');
+
+    classes.forEach(c => {
+      const row = document.createElement('label');
+      row.className = 'lchild__row';
+      row.dataset.lu = c.lu;
+      row.innerHTML =
+        '<input type="checkbox" class="lchild__box" checked>' +
+        `<i class="lchild__sw" style="background:${S.colour[c.lu]}"></i>` +
+        `<span class="lchild__nm">${esc(c.lu)}</span>` +
+        `<span class="lchild__n">${nf(c.count)}</span>`;
+      const box = row.querySelector('input');
+      box.addEventListener('change', () => {
+        box.checked ? S.offClasses.delete(c.lu) : S.offClasses.add(c.lu);
+        row.classList.toggle('is-off', !box.checked);
+        syncGroupBox(g);
+        afterFilter();
+      });
+      CLASS_BOX[c.lu] = box;
+      CLASS_ROW[c.lu] = row;
+      kids.appendChild(row);
     });
-    host.appendChild(lab);
-    S.onGroups.add(d.g);
+
+    wrap.appendChild(kids);
+    host.appendChild(wrap);
+
+    const groupBox = lab.querySelector('input');
+    GROUP_BOX[g] = groupBox;
+    GROUP_ROW[g] = lab;
+    groupBox.addEventListener('change', () => {
+      const on = groupBox.checked;
+      classes.forEach(c => {
+        on ? S.offClasses.delete(c.lu) : S.offClasses.add(c.lu);
+        if (CLASS_BOX[c.lu]) CLASS_BOX[c.lu].checked = on;
+        if (CLASS_ROW[c.lu]) CLASS_ROW[c.lu].classList.toggle('is-off', !on);
+      });
+      groupBox.indeterminate = false;
+      lab.classList.toggle('is-off', !on);
+      afterFilter();
+    });
+
+    chev.addEventListener('click', () => {
+      const open = chev.getAttribute('aria-expanded') === 'true';
+      chev.setAttribute('aria-expanded', open ? 'false' : 'true');
+      chev.setAttribute('aria-label', (open ? 'Expand ' : 'Collapse ') + (GROUP_LABEL[g] || g));
+      kids.hidden = open;
+    });
   });
 }
 
-function syncLayerBoxes() {
-  $$('#layers input').forEach(i => {
-    i.checked = S.onGroups.has(i.dataset.group);
-    i.closest('.lay').classList.toggle('is-off', !i.checked);
+function syncGroupBox(g) {
+  const box = GROUP_BOX[g];
+  if (!box) return;
+  const classes = S.stats.groups[g] || [];
+  const onCount = classes.filter(lu => !S.offClasses.has(lu)).length;
+  box.checked = onCount > 0;
+  box.indeterminate = onCount > 0 && onCount < classes.length;
+  if (GROUP_ROW[g]) GROUP_ROW[g].classList.toggle('is-off', onCount === 0);
+}
+
+function syncClassBox(lu) {
+  const box = CLASS_BOX[lu];
+  if (box) box.checked = !S.offClasses.has(lu);
+  if (CLASS_ROW[lu]) CLASS_ROW[lu].classList.toggle('is-off', S.offClasses.has(lu));
+}
+
+function syncAllLayerBoxes() {
+  Object.keys(S.stats.groups).forEach(g => {
+    (S.stats.groups[g] || []).forEach(syncClassBox);
+    syncGroupBox(g);
   });
 }
 
@@ -325,7 +429,7 @@ function loadLayer(group, file) {
             .openOn(map);
         })
       });
-      if (S.onGroups.has(group)) S.layers[group].addTo(map);
+      S.layers[group].addTo(map);
 
       S.loaded++;
       countUp();
@@ -342,7 +446,7 @@ function loadLayer(group, file) {
 }
 
 function visible(p) {
-  if (!S.onGroups.has(S.luGroup[p.lu]))     return false;
+  if (S.offClasses.has(p.lu))               return false;
   if (S.cat !== 'all' && p.ct !== S.cat)    return false;
   if (S.luPick && p.lu !== S.luPick)        return false;
   if (S.district !== 'all' && (p.d || S.stats.district) !== S.district) return false;
@@ -391,7 +495,7 @@ function paintLegend() {
   const el = document.querySelector('.leg');
   if (!el) return;
   const rows = groupTotals()
-    .filter(d => S.onGroups.has(d.g))
+    .filter(d => (S.stats.groups[d.g] || []).some(lu => !S.offClasses.has(lu)))
     .map(d => `<div class="leg__r"><i class="leg__sw" style="background:${GROUP_HUE[d.g]}"></i>` +
               `${GROUP_LABEL[d.g] || d.g}</div>`).join('');
   el.innerHTML = '<h4>Layers shown</h4>' +
@@ -399,21 +503,19 @@ function paintLegend() {
 }
 
 /* ═══════════════════════════════════════════ filtering */
-function toggleGroup(g, on) {
-  on ? S.onGroups.add(g) : S.onGroups.delete(g);
-  const lyr = S.layers[g];
-  if (lyr) on ? lyr.addTo(map) : map.removeLayer(lyr);
-  afterFilter();
-}
-
+// Ribbon segments call this to isolate one class-group, toggling
+// every one of its land uses on and every other group's off.
 function soloGroup(g) {
-  const only = S.onGroups.size === 1 && S.onGroups.has(g);
-  S.onGroups = new Set(only ? Object.keys(S.stats.groups) : [g]);
-  Object.entries(S.layers).forEach(([k, lyr]) => {
-    if (!map) return;
-    S.onGroups.has(k) ? lyr.addTo(map) : map.removeLayer(lyr);
-  });
-  syncLayerBoxes();
+  const groups = Object.keys(S.stats.groups);
+  const isSolo = groups.every(gr =>
+    (S.stats.groups[gr] || []).every(lu => (gr === g) !== S.offClasses.has(lu)));
+  S.offClasses.clear();
+  if (!isSolo) {
+    groups.forEach(gr => {
+      if (gr !== g) (S.stats.groups[gr] || []).forEach(lu => S.offClasses.add(lu));
+    });
+  }
+  syncAllLayerBoxes();
   afterFilter();
 }
 
@@ -422,9 +524,9 @@ function soloGroup(g) {
 function setClassPick(lu) {
   S.luPick = lu || null;
   if (S.luPick) {
-    const g = S.luGroup[S.luPick];
-    if (g && !S.onGroups.has(g)) { S.onGroups.add(g); S.layers[g] && S.layers[g].addTo(map); }
-    syncLayerBoxes();
+    S.offClasses.delete(S.luPick);   // picking a class should always reveal it
+    syncClassBox(S.luPick);
+    syncGroupBox(S.luGroup[S.luPick]);
   }
   syncControls();
   afterFilter();
@@ -453,7 +555,7 @@ let raf = null;
 function afterFilter() {
   if (raf) cancelAnimationFrame(raf);
   raf = requestAnimationFrame(() => {
-    S.onGroups.forEach(g => { if (S.layers[g]) S.layers[g].setStyle(styleFor); });
+    Object.values(S.layers).forEach(l => l.setStyle(styleFor));
     paintLegend();
     readRibbon();
     refreshStats();
@@ -647,6 +749,12 @@ function score(q, text) {
   return 0;
 }
 
+// Search now covers land use classes only — named sites are kept out
+// of the index on request. Flip this back on to restore them; nothing
+// else needs to change, buildSearchIndex still knows how to fold them
+// in (see the block below, currently unreachable while this is false).
+const SEARCH_INCLUDE_SITES = false;
+
 function buildSearchIndex() {
   const idx = S.stats.classes.map(c => ({
     kind : 'class',
@@ -656,21 +764,23 @@ function buildSearchIndex() {
     w    : c.acres
   }));
 
-  // Named sites, grouped so five "Brick Kiln" records read as one entry.
-  const byName = {};
-  (S.stats.named_sites || []).forEach(s => {
-    const k = s.name + '|' + s.lu;
-    const g = byName[k] || (byName[k] = { ...s, n: 0, acres: 0 });
-    g.n++; g.acres += s.acres;
-    if (s.acres >= (g.big || 0)) { g.big = s.acres; g.lat = s.lat; g.lon = s.lon; }
-  });
-  Object.values(byName).forEach(g => idx.push({
-    kind : 'site',
-    label: g.name,
-    sub  : `${g.lu} · ${nf(g.acres, 2)} ac` + (g.n > 1 ? ` · ${g.n} locations` : ''),
-    lu   : g.lu, lat: g.lat, lon: g.lon,
-    w    : g.acres
-  }));
+  if (SEARCH_INCLUDE_SITES) {
+    // Named sites, grouped so five "Brick Kiln" records read as one entry.
+    const byName = {};
+    (S.stats.named_sites || []).forEach(s => {
+      const k = s.name + '|' + s.lu;
+      const g = byName[k] || (byName[k] = { ...s, n: 0, acres: 0 });
+      g.n++; g.acres += s.acres;
+      if (s.acres >= (g.big || 0)) { g.big = s.acres; g.lat = s.lat; g.lon = s.lon; }
+    });
+    Object.values(byName).forEach(g => idx.push({
+      kind : 'site',
+      label: g.name,
+      sub  : `${g.lu} · ${nf(g.acres, 2)} ac` + (g.n > 1 ? ` · ${g.n} locations` : ''),
+      lu   : g.lu, lat: g.lat, lon: g.lon,
+      w    : g.acres
+    }));
+  }
 
   S.index = idx;
 }
@@ -679,7 +789,7 @@ function runSearch(raw) {
   const q = norm(raw);
   if (q.length < 2) return hideSugg();
   S.sugg = S.index
-    .map(e => ({ e, s: score(q, e.label) + (e.kind === 'class' ? 25 : 0) }))
+    .map(e => ({ e, s: score(q, e.label) }))
     .filter(r => r.s > 0)
     .sort((a, b) => b.s - a.s || b.e.w - a.e.w)
     .slice(0, 9)
@@ -701,7 +811,6 @@ function renderSugg(q) {
           <span class="ac__t">${hilite(e.label, q)}</span>
           <span class="ac__s">${esc(e.sub)}</span>
         </span>
-        <span class="ac__k${e.kind === 'site' ? ' is-site' : ''}">${e.kind === 'site' ? 'Site' : 'Class'}</span>
       </li>`).join('');
     list.querySelectorAll('.ac__i').forEach(li =>
       li.addEventListener('mousedown', ev => {
@@ -747,7 +856,7 @@ function choose(i) {
 
   setClassPick(e.lu);
 
-  if (e.kind === 'site' && e.lat != null) {
+  if (SEARCH_INCLUDE_SITES && e.kind === 'site' && e.lat != null) {
     map.setView([e.lat, e.lon], 16);
     L.popup({ maxWidth: 320 })
       .setLatLng([e.lat, e.lon])
@@ -978,9 +1087,8 @@ function wire() {
   }));
 
   $('#btnAll').addEventListener('click', () => {
-    S.onGroups = new Set(Object.keys(S.stats.groups));
-    Object.entries(S.layers).forEach(([, l]) => l.addTo(map));
-    syncLayerBoxes();
+    S.offClasses.clear();
+    syncAllLayerBoxes();
     afterFilter();
   });
 
@@ -1047,7 +1155,7 @@ function wire() {
 }
 
 function resetAll() {
-  S.onGroups = new Set(Object.keys(S.stats.groups));
+  S.offClasses.clear();
   S.cat = 'all';
   S.district = 'all';
   S.localGov = 'all';
@@ -1056,8 +1164,7 @@ function resetAll() {
   const tblSearchEl = $('#tblSearch'); if (tblSearchEl) tblSearchEl.value = '';
   const fSearchEl = $('#fSearch');     if (fSearchEl) fSearchEl.value = '';
   hideSugg();
-  Object.entries(S.layers).forEach(([, l]) => l.addTo(map));
-  syncLayerBoxes();
+  syncAllLayerBoxes();
   syncControls();
   afterFilter();
   paintTable();
