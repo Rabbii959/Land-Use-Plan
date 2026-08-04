@@ -5,6 +5,11 @@
 (function () {
 'use strict';
 
+/* Bump on every change. Check the live file matches by opening the
+   browser console, or by searching the deployed app.js for this line. */
+const BUILD = 'hafizabad-dashboard 2026-08-04c';
+console.info(BUILD);
+
 /* ─────────────────────────────────────────── palette
    Base hues follow land use plan convention: residential in ochre,
    commercial red, industrial violet, agriculture green, public blue,
@@ -88,29 +93,45 @@ function init(stats) {
     if (!S.colour[c.lu]) { S.colour[c.lu] = '#9aa79f'; S.luGroup[c.lu] = 'other'; }
   });
 
-  paintKpis();
-  paintLayerList();   // seeds S.onGroups — must precede the ribbon readout
-  paintRibbon();
-  buildMap();
-  paintCharts();
-  paintTable();
-  wire();
+  // Each stage is isolated: if one throws, the others still run, so the
+  // map never goes blank because of a problem in a chart or a table.
+  const stage = (name, fn) => {
+    try { fn(); } catch (e) { console.error('stage failed: ' + name, e); }
+  };
+  stage('kpis',    paintKpis);
+  stage('layers',  paintLayerList);   // seeds S.onGroups — must precede the ribbon
+  stage('ribbon',  paintRibbon);
+  stage('map',     buildMap);
+  stage('charts',  paintCharts);
+  stage('table',   paintTable);
+  stage('wiring',  wire);
 }
 
 /* ═══════════════════════════════════════════ key figures */
+/* Writes text only if the element exists. A partial deploy (new HTML,
+   stale JS, or vice versa) should degrade to a few blank figures, not
+   throw and take the map, ribbon and layer list down with it. */
+function setText(sel, v) {
+  const el = $(sel);
+  if (el) el.textContent = v;
+  return !!el;
+}
+
 function paintKpis() {
   const t = S.stats.totals;
   const prop = S.stats.categories.find(c => c.name === 'Proposed');
   const farm = groupTotals().find(g => g.g === 'agriculture');
-  $('#kpiAcres').textContent    = nf(t.acres);
-  $('#kpiKm').textContent       = nf(t.sqkm, 1);
-  $('#kpiAvg').textContent      = nf(t.acres / t.features, 1);
-  $('#kpiProposed').textContent = prop ? nf(prop.pct, 1) : '0';
-  $('#kpiFarm').textContent     = farm ? nf(100 * farm.acres / t.acres, 1) : '0';
-  // masthead counters, matching the province dashboard's header block
-  const mp = $('#mcParcels'), mc = $('#mcClasses');
-  if (mp) mp.textContent = nf(t.features);
-  if (mc) mc.textContent = t.classes;
+  setText('#kpiAcres',    nf(t.acres));
+  setText('#kpiKm',       nf(t.sqkm, 1));
+  setText('#kpiAvg',      nf(t.acres / t.features, 1));
+  setText('#kpiProposed', prop ? nf(prop.pct, 1) : '0');
+  setText('#kpiFarm',     farm ? nf(100 * farm.acres / t.acres, 1) : '0');
+  // masthead figure chips
+  setText('#mcParcels',   nf(t.features));
+  setText('#mcClasses',   t.classes);
+  // figures carried by the earlier layout, if this page still has them
+  setText('#kpiParcels',  nf(t.features));
+  setText('#kpiClasses',  t.classes);
 }
 
 /* ═══════════════════════════════════════════ share ribbon
