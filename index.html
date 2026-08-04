@@ -21,8 +21,8 @@
 
     <div class="masthead__centre">
       <div class="masthead__text">
-        <h1 class="masthead__title"><span>Hafizabad District</span> Land Use Plan</h1>
-        <div class="masthead__sub">Land Use Classification &amp; Zoning — Statistical Dashboard &amp; Map Viewer</div>
+        <h1 class="masthead__title"><span>Statistical Dashboard</span> of District Land Use Plans of Punjab</h1>
+        <div class="masthead__sub">Hafizabad District — Land Use Classification &amp; Zoning</div>
       </div>
       <div class="masthead__stats">
         <div class="hstat"><div class="hstat__n" id="mcParcels">—</div><div class="hstat__l">Parcels</div></div>
@@ -35,6 +35,45 @@
 </header>
 
 <main class="wrap">
+
+  <!-- ══════════════════════════════════════ filters -->
+  <section class="filters" aria-label="Filter the plan">
+    <div class="filters__row">
+      <div class="fld">
+        <label class="fld__l" for="fDistrict">District</label>
+        <select class="sel" id="fDistrict"></select>
+      </div>
+      <div class="fld">
+        <label class="fld__l" for="fLocal">Local Government</label>
+        <select class="sel" id="fLocal" disabled></select>
+      </div>
+      <div class="fld">
+        <label class="fld__l" for="fLanduse">Land Use</label>
+        <select class="sel" id="fLanduse"></select>
+      </div>
+      <div class="fld">
+        <label class="fld__l" for="fCategory">Category</label>
+        <select class="sel" id="fCategory">
+          <option value="all">All</option>
+          <option value="Existing">Existing</option>
+          <option value="Proposed">Proposed</option>
+        </select>
+      </div>
+
+      <div class="fld fld--grow">
+        <label class="fld__l" for="fSearch">Search land uses &amp; named sites</label>
+        <div class="ac">
+          <input class="sel sel--inp" id="fSearch" type="search" autocomplete="off"
+                 role="combobox" aria-expanded="false" aria-autocomplete="list"
+                 aria-controls="fSuggest" placeholder="Try “rice mill”, “gravyard”, “edu”…">
+          <ul class="ac__list" id="fSuggest" role="listbox" aria-label="Search results" hidden></ul>
+        </div>
+      </div>
+
+      <button class="btn btn--quiet" id="fReset">Reset filters</button>
+    </div>
+    <p class="filters__note" id="fNote" hidden></p>
+  </section>
 
   <!-- ══════════════════════════════════════ key figures -->
   <section class="kpis" aria-label="Key figures">
@@ -96,15 +135,6 @@
     </div>
 
     <aside class="board__side">
-      <div class="panel">
-        <h3 class="h-pan">Category</h3>
-        <div class="seg seg--full" role="group" aria-label="Plan category">
-          <button class="seg__b is-on" data-cat="all">All</button>
-          <button class="seg__b" data-cat="Existing">Existing</button>
-          <button class="seg__b" data-cat="Proposed">Proposed</button>
-        </div>
-      </div>
-
       <div class="panel panel--grow">
         <div class="h-pan-row">
           <h3 class="h-pan">Map layers</h3>
