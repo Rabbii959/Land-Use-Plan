@@ -440,12 +440,12 @@ function refreshStats() {
 
 /* ═══════════════════════════════════════════ charts */
 const CH = {};
-const GRID = { color: '#eceee7' };
-const TICK = { color: '#5f6f64', font: { family: "'IBM Plex Mono', monospace", size: 10 } };
+const GRID = { color: '#edf7f2' };
+const TICK = { color: '#6b8a78', font: { family: 'Tahoma, Geneva, sans-serif', size: 10 } };
 
 function paintCharts() {
-  Chart.defaults.font.family = "'Public Sans', system-ui, sans-serif";
-  Chart.defaults.color = '#2f4438';
+  Chart.defaults.font.family = 'Tahoma, Geneva, sans-serif';
+  Chart.defaults.color = '#3d5c4a';
 
   /* — largest classes, log scale so farmland does not flatten the rest — */
   const top = S.stats.classes.slice(0, 15);
@@ -475,7 +475,7 @@ function paintCharts() {
         x: { type: 'logarithmic', grid: GRID,
              ticks: { ...TICK, callback: v => nf(v) },
              title: { text: 'Acres (logarithmic)', display: true,
-                      color: '#5f6f64', font: { size: 11 } } },
+                      color: '#6b8a78', font: { size: 11 } } },
         y: { grid: { display: false },
              ticks: { ...TICK, font: { ...TICK.font, size: 10.5 }, autoSkip: false } }
       }
@@ -490,7 +490,7 @@ function paintCharts() {
       labels: cats.map(c => c.name),
       datasets: [{
         data: cats.map(c => c.acres),
-        backgroundColor: ['#2a7d53', '#c8a44d', '#8d6aa6'],
+        backgroundColor: ['#2d7a52', '#b8952a', '#8d6aa6'],
         borderColor: '#fff', borderWidth: 2
       }]
     },
@@ -550,11 +550,11 @@ function paintCharts() {
         x: { type: 'logarithmic', grid: GRID,
              ticks: { ...TICK, callback: v => nf(v) },
              title: { text: 'Parcels in class (logarithmic)', display: true,
-                      color: '#5f6f64', font: { size: 11 } } },
+                      color: '#6b8a78', font: { size: 11 } } },
         y: { type: 'logarithmic', grid: GRID,
              ticks: { ...TICK, callback: v => nf(v, v < 1 ? 2 : 0) },
              title: { text: 'Average parcel size, acres (logarithmic)', display: true,
-                      color: '#5f6f64', font: { size: 11 } } }
+                      color: '#6b8a78', font: { size: 11 } } }
       }
     }
   });
