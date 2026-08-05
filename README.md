@@ -31,12 +31,15 @@ Abadis") can be hidden without touching the rest of its group.
 
 **Filters** — District, Local Govt, Land Use, and Category sit in one row
 below the header, alongside a typo-tolerant search restricted to land use
-classes. District and Local Govt cover all of Punjab — every district and
-every Local Government unit in the province — sourced from the province-wide
-boundary layers, not just the district with land-use data loaded. Picking
-either one zooms the map to its real boundary and draws its outline; picking
-a Local Govt brings its parent district along automatically. Local Govt is
-assigned to each parcel by point-in-polygon against the district's real
+classes. The map lands on all of Punjab: every one of the 40 districts
+(black outline, light green fill) and all 237 Local Govt units (light red
+outline) are visible from the start, not just the one with land-use data.
+Picking a district or Local Govt zooms to it and bolds its outline; picking
+a Local Govt brings its parent district along automatically. Selecting a
+Local Govt also recolours the map itself — parcels inside its boundary stay
+in full colour, everything else fades to 40% opacity, so the chosen area
+reads clearly without hiding the surrounding context entirely. Local Govt
+assignment itself is by point-in-polygon against the district's real
 notified boundaries (Municipal Committees and the District Council). A
 district other than the one with parcel data still zooms and outlines
 correctly — the page says plainly that no land use parcels exist there yet,
