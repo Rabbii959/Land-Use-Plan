@@ -31,8 +31,11 @@ Abadis") can be hidden without touching the rest of its group.
 
 **Filters** — District, Local Govt, Land Use, and Category sit in one row
 below the header, alongside a typo-tolerant search restricted to land use
-classes. Local Govt stays disabled until a `data/local_govt.geojson` boundary
-file is supplied (see below); nothing is fabricated in its place.
+classes. Local Govt is assigned by point-in-polygon against the district's
+real notified boundaries (Municipal Committees and the District Council) —
+each parcel is tagged by which one its centre falls in. If `data/local_govt.geojson`
+is ever missing for a future district, the control disables itself and says
+so rather than fabricating a division.
 
 **Cross-filtering** — the share ribbon, the legend, the filters, the charts
 and the table all drive the same state. Selecting a bar, a ribbon band, a
@@ -90,10 +93,12 @@ change: every path in the page is relative.
 index.html                     the dashboard
 assets/css/style.css           styling
 assets/js/app.js               map, filters, charts, table
-data/stats.json                pre-computed statistics (60 KB)
-data/lu_*.geojson              geometry, split into 8 thematic layers
-tools/build_data.py            regenerates data/ from the source Esri JSON
-tools/groups.json              which land use class belongs to which layer
+data/stats.json                pre-computed statistics (~60 KB)
+data/lu_*.geojson               parcel geometry, split into 7 LU_Class layers
+data/district_boundary.geojson  the district's own outline (optional)
+data/local_govt.geojson         Municipal Committee / District Council boundaries (optional)
+tools/build_data.py            regenerates data/ from the source Esri JSON files
+tools/groups.json               fallback grouping, used only if LU_Class is blank
 .nojekyll                      serve files as-is
 ```
 
@@ -141,6 +146,24 @@ Needs Python 3 and NumPy only.
 SRC=Updatedjson3.json OUT=. python3 tools/build_data.py
 ```
 
+Two more inputs are optional but recommended — supplying them switches on the
+district outline and the real, notified Local Govt filter instead of the
+custom fallback grouping / disabled control:
+
+```bash
+SRC=Updatedjson3.json \
+SRC_DISTRICT_BOUNDARY=DistrictBoundary.json \
+SRC_LG_BOUNDARY=LGBoundary.json \
+OUT=. python3 tools/build_data.py
+```
+
+Both boundary files are expected to be **province-wide** Esri JSON layers (one
+polygon per district; one per Local Government unit, each tagged with which
+district it belongs to) — the script filters each down to whichever district
+the parcel file itself reports before writing `data/district_boundary.geojson`
+and `data/local_govt.geojson`. Neither raw source file is shipped in the repo;
+regenerate locally if you need to rerun this.
+
 `SRC` is the source Esri JSON feature set, `OUT` is the folder containing
 `data/`. The script prints a reconciliation report — feature counts, total area,
 bounding box, vertex reduction, per-file sizes, and the derived group list —
@@ -158,6 +181,10 @@ To retune the *fallback* grouping used only when `LU_Class` is blank, edit
 Hafizabad district land use plan, Esri JSON feature set, WGS 84 (EPSG:4326),
 16,980 polygons across 60 land use classes grouped into 7 `LU_Class` categories,
 attributed by land use, category (existing or proposed), and name where recorded.
+
+Administrative boundaries: Punjab district and Local Government layers
+(province-wide, filtered to Hafizabad's 1 district polygon and 5 Local
+Government units — 4 Municipal Committees and the District Council).
 
 Basemaps: OpenStreetMap, Esri World Imagery, CARTO. Libraries: Leaflet 1.9.4,
 Chart.js 4.4.1, both from CDN.
