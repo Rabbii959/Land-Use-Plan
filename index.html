@@ -86,35 +86,26 @@
     <p class="filters__note" id="fNote" hidden></p>
   </section>
 
-  <!-- ══════════════════════════════════════ map (legend floats on it) -->
+  <!-- ══════════════════════════════════════ map (legend + big numbers) -->
   <section class="board" aria-labelledby="mapH">
     <div class="board__bar">
       <h2 class="h-sec" id="mapH">Land use map</h2>
-      <div class="seg" role="group" aria-label="Base map">
-        <button class="seg__b is-on" data-base="street">Street</button>
-        <button class="seg__b" data-base="satellite">Satellite</button>
-        <button class="seg__b" data-base="plain">Plain</button>
-      </div>
     </div>
 
     <div class="board__mapwrap">
-      <div id="map" tabindex="0"></div>
+      <div class="board__mapcol">
+        <div id="map" tabindex="0"></div>
 
-      <aside class="legend-float" aria-label="Land use classes and current selection">
-        <div class="legend-float__head">
-          <h3 class="h-pan">Land use classes</h3>
-          <button class="lnk" id="btnAll">All on</button>
-        </div>
+        <aside class="legend-float" aria-label="Land use classes">
+          <div class="legend-float__head">
+            <h3 class="h-pan">Land use classes</h3>
+            <button class="lnk" id="btnAll">All on</button>
+          </div>
+          <div id="layers" class="legend" role="tree" aria-label="Land use classes"></div>
+        </aside>
+      </div>
 
-        <dl class="legend-float__sel" id="selStats">
-          <div><dt id="selWhatLbl">Selection</dt><dd id="selWhat">Whole district</dd></div>
-          <div><dt>Area</dt><dd id="selArea">—</dd></div>
-          <div><dt>Share</dt><dd id="selShare">—</dd></div>
-          <div><dt>Parcels</dt><dd id="selCount">—</dd></div>
-        </dl>
-
-        <div id="layers" class="legend" role="tree" aria-label="Land use classes"></div>
-      </aside>
+      <aside class="board__numbers" aria-label="Selected area summary" id="bigNumbers"></aside>
     </div>
 
     <div class="board__foot">
