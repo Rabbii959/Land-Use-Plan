@@ -15,7 +15,6 @@ import numpy as np
 
 SRC = os.environ.get("SRC", "Hafizabad.json")
 SRC_DISTRICT_BOUNDARY = os.environ.get("SRC_DISTRICT_BOUNDARY", "")
-SRC_LG_BOUNDARY = os.environ.get("SRC_LG_BOUNDARY", "")
 OUT = os.environ.get("OUT", ".")
 R = 6371007.181           # WGS84 authalic radius (m)
 SQM_PER_ACRE = 4046.8564224
@@ -108,31 +107,6 @@ def slugify(label):
     Network' -> 'transportation_network'."""
     s = re.sub(r"[^a-z0-9]+", "_", label.strip().lower()).strip("_")
     return s or "other"
-
-
-def esri_rings_to_multipolygon(rings, dp=6):
-    """Esri rings -> GeoJSON MultiPolygon coordinates, no simplification.
-    Used for the district/local-government boundary files, which are a
-    handful of polygons rather than 17,000 parcels, so full precision at
-    a ~0.1 m rounding costs nothing worth trimming."""
-    polys, cur = [], None
-    for r in rings:
-        q = [[round(float(x), dp), round(float(y), dp)] for x, y in r]
-        out = [q[0]]
-        for p in q[1:]:
-            if p != out[-1]:
-                out.append(p)
-        if out[0] != out[-1]:
-            out.append(out[0])
-        if len(out) < 4:
-            continue
-        outer = planar_signed_area(r) < 0     # Esri: CW ring = outer
-        if outer or cur is None:
-            cur = [out]
-            polys.append(cur)
-        else:
-            cur.append(out)
-    return polys
 
 
 # ---------------------------------------------------------------- main
@@ -296,14 +270,14 @@ def main():
             "kb": round(os.path.getsize(path) / 1024),
         })
 
-    # ------------------------------------------------ boundary files
-    # Optional: the source parcel export names its own district (used
-    # below as the key to filter these files down to), but the display
-    # name and the district outline itself come from the authoritative
-    # boundary layer when one is supplied.
+    # ------------------------------------------------ district name
+    # The parcel export names its own district; if an authoritative
+    # District Boundary file is supplied, prefer its spelling/capitalisation
+    # for display. The actual boundary geometry — and every district's
+    # Local Govt units — are produced once, province-wide, by
+    # tools/build_boundaries.py rather than re-derived here per district.
     parcel_district = district_votes.most_common(1)[0][0] if district_votes else ""
     district_name = parcel_district
-    district_bbox = None
 
     if SRC_DISTRICT_BOUNDARY:
         db = json.load(open(SRC_DISTRICT_BOUNDARY))
@@ -312,57 +286,10 @@ def main():
                       == parcel_district.lower()), None)
         if match:
             district_name = (match["attributes"].get("District") or parcel_district).strip()
-            rings = match.get("geometry", {}).get("rings") or []
-            polys = esri_rings_to_multipolygon(rings)
-            if polys:
-                xs = [p[0] for poly in polys for ring in poly for p in ring]
-                ys = [p[1] for poly in polys for ring in poly for p in ring]
-                district_bbox = [round(min(xs), 5), round(min(ys), 5),
-                                  round(max(xs), 5), round(max(ys), 5)]
-                with open(f"{OUT}/data/district_boundary.geojson", "w") as fh:
-                    json.dump({
-                        "type": "FeatureCollection",
-                        "features": [{
-                            "type": "Feature",
-                            "properties": {"name": district_name},
-                            "geometry": {"type": "MultiPolygon", "coordinates": polys},
-                        }]
-                    }, fh, separators=(",", ":"))
-            print(f"district boundary: matched '{district_name}' "
-                  f"({len(rings)} ring(s) from {SRC_DISTRICT_BOUNDARY})")
+            print(f"district name: confirmed '{district_name}' against {SRC_DISTRICT_BOUNDARY}")
         else:
             print(f"** WARNING: no District Boundary record matches "
-                  f"'{parcel_district}' — district name/outline not updated **")
-
-    lg_written = 0
-    if SRC_LG_BOUNDARY:
-        lgsrc = json.load(open(SRC_LG_BOUNDARY))
-        lg_feats = [f for f in lgsrc["features"]
-                    if (f["attributes"].get("District") or "").strip().lower()
-                    == parcel_district.lower()]
-        out_lg = []
-        for f in lg_feats:
-            name = (f["attributes"].get("Local_govt") or "").strip()
-            rings = f.get("geometry", {}).get("rings") or []
-            polys = esri_rings_to_multipolygon(rings)
-            if not name or not polys:
-                continue
-            out_lg.append({
-                "type": "Feature",
-                "properties": {"name": name},
-                "geometry": {"type": "MultiPolygon", "coordinates": polys},
-            })
-        if out_lg:
-            with open(f"{OUT}/data/local_govt.geojson", "w") as fh:
-                json.dump({"type": "FeatureCollection", "features": out_lg},
-                          fh, separators=(",", ":"))
-            lg_written = len(out_lg)
-            print(f"local government: wrote {lg_written} boundaries for "
-                  f"'{parcel_district}' -> " +
-                  ", ".join(sorted(f['properties']['name'] for f in out_lg)))
-        else:
-            print(f"** WARNING: no LG Boundary records match "
-                  f"'{parcel_district}' — data/local_govt.geojson not written **")
+                  f"'{parcel_district}' — using the parcel file's own spelling **")
 
     # ------------------------------------------------ stats file
     total_area = sum(v["area_m2"] for v in stats.values())
@@ -406,9 +333,9 @@ def main():
     # ------------------------------------------------ report
     print(f"features out : {len(out_feats):,}")
     print(f"district     : {district_name!r} " +
-          (f"(district boundary supplied)" if SRC_DISTRICT_BOUNDARY else "(no district boundary supplied)"))
-    print(f"local govt   : {lg_written} boundaries written" if lg_written else
-          "local govt   : none (no LG boundary supplied or matched)")
+          ("(confirmed against District Boundary)" if SRC_DISTRICT_BOUNDARY
+           else "(from the parcel file's own District field)"))
+    print("(district outline + Local Govt boundaries: run tools/build_boundaries.py separately)")
     print(f"classes      : {len(stats)}")
     print(f"groups       : {len(groups)}  ({', '.join(sorted(group_labels.values()))})")
     if lu_class_conflicts:
