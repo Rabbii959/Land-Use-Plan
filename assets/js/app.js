@@ -66,8 +66,15 @@ const S = {
   offClasses: new Set(),   // individual land use classes toggled off in the legend
   district  : 'all',
   localGov  : 'all',
-  lgAreas   : null,        // local government boundaries, when supplied
+  lgAreas   : null,        // local government boundaries, for the district with parcel data
   pendingLgAssign: false,  // true if boundaries arrived before all parcel layers did
+  districtIndex   : [],    // [{name, rings}] every district in the province
+  lgIndex         : [],    // [{name, district, rings}] every LG in the province
+  lgByDistrict    : {},    // district name -> [lg names], for cascading the select
+  districtBounds  : {},    // district name -> Leaflet LatLngBounds
+  lgBounds        : {},    // lg name -> Leaflet LatLngBounds
+  highlightDistrict: null, // which district outline is currently drawn
+  highlightLG      : null, // which LG outline is currently drawn, if any
   cat       : 'all',
   luPick    : null,
   index     : [],          // search index
@@ -417,23 +424,142 @@ function buildMap() {
   legend.addTo(map);
   paintLegend();
 
-  loadDistrictOutline();
+  loadAdminBoundaries();
   S.stats.manifest.forEach(m => loadLayer(m.group, m.file));
 }
 
-/* Optional: an authoritative district outline, drawn under the parcels.
-   Absent data/district_boundary.geojson, this quietly does nothing —
-   the map still works from the parcel bounding box alone. */
-function loadDistrictOutline() {
-  fetch('data/district_boundary.geojson')
-    .then(r => r.ok ? r.json() : Promise.reject('absent'))
-    .then(gj => {
-      L.geoJSON(gj, {
-        interactive: false,
-        style: { fill: false, color: '#b8952a', weight: 2.5, dashArray: '6 4', opacity: 0.85 }
-      }).addTo(map);
-    })
-    .catch(() => {});
+/* ── administrative boundaries ──────────────────────────────────
+   Province-wide District and Local Govt layers. Populates both
+   filters with every district/LG in Punjab, draws whichever one is
+   currently selected as an outline, and — for the district that
+   actually has parcel data — runs the point-in-polygon assignment
+   that powers the Local Govt filter. Absent either file, the page
+   falls back to the single-district behaviour it already had. */
+function loadAdminBoundaries() {
+  Promise.all([
+    fetch('data/districts.geojson').then(r => r.ok ? r.json() : Promise.reject('absent')),
+    fetch('data/local_govts.geojson').then(r => r.ok ? r.json() : Promise.reject('absent'))
+  ]).then(([districtsGJ, lgGJ]) => {
+    S.districtIndex = (districtsGJ.features || []).map(f => ({
+      name: (f.properties && f.properties.name) || 'Unnamed',
+      rings: ringsOf(f.geometry)
+    })).filter(d => d.rings.length);
+
+    S.lgIndex = (lgGJ.features || []).map(f => ({
+      name: (f.properties && f.properties.name) || 'Unnamed',
+      district: (f.properties && f.properties.district) || '',
+      rings: ringsOf(f.geometry)
+    })).filter(d => d.rings.length);
+
+    S.lgByDistrict = {};
+    S.lgIndex.forEach(a => {
+      (S.lgByDistrict[a.district] = S.lgByDistrict[a.district] || []).push(a.name);
+    });
+    Object.values(S.lgByDistrict).forEach(list => list.sort());
+
+    // Outline layers: every district/LG loaded once, styled invisible
+    // except whichever one updateHighlight() currently picks out.
+    S.distLayer = L.geoJSON(districtsGJ, {
+      interactive: false,
+      style: f => districtStyle((f.properties && f.properties.name))
+    }).addTo(map);
+    S.lgLayer = L.geoJSON(lgGJ, {
+      interactive: false,
+      style: f => lgStyle((f.properties && f.properties.name))
+    }).addTo(map);
+
+    S.districtBounds = {};
+    S.distLayer.eachLayer(l => { S.districtBounds[l.feature.properties.name] = l.getBounds(); });
+    S.lgBounds = {};
+    S.lgLayer.eachLayer(l => { S.lgBounds[l.feature.properties.name] = l.getBounds(); });
+
+    const allDistricts = [...new Set(S.districtIndex.map(d => d.name))].sort();
+    fill('#fDistrict', [['all', 'All districts']].concat(
+      allDistricts.map(d => [d, d === S.stats.district ? d : `${d} — boundary only`])));
+
+    populateLocalGovOptions();
+    updateHighlight();
+    syncControls();
+
+    // Parcel assignment only makes sense for the district that actually
+    // has land-use data loaded.
+    S.lgAreas = S.lgIndex.filter(a => a.district === S.stats.district);
+    if (S.lgAreas.length) {
+      if (S.loaded === S.stats.manifest.length) assignLocalGov();
+      else S.pendingLgAssign = true;
+    } else {
+      note(`No Local Govt boundaries found for ${esc(S.stats.district)} in ` +
+           '<code>data/local_govts.geojson</code>.');
+    }
+  }).catch(() => note(
+    'Province-wide boundaries are not present. Add <code>data/districts.geojson</code> ' +
+    'and <code>data/local_govts.geojson</code> (see README) and both filters switch on ' +
+    'automatically.'));
+}
+
+function districtStyle(name) {
+  return name === S.highlightDistrict
+    ? { fill: false, color: '#b8952a', weight: 2.5, dashArray: '6 4', opacity: 0.85 }
+    : { fill: false, stroke: false, interactive: false };
+}
+
+function lgStyle(name) {
+  return name === S.highlightLG
+    ? { fill: false, color: '#2d7a52', weight: 2, dashArray: '3 3', opacity: 0.9 }
+    : { fill: false, stroke: false, interactive: false };
+}
+
+// Which outline(s) are drawn — the effective district always shows;
+// a specific Local Govt shows on top of it when one is picked.
+function updateHighlight() {
+  S.highlightDistrict = S.district !== 'all' ? S.district : S.stats.district;
+  S.highlightLG = S.localGov !== 'all' ? S.localGov : null;
+  if (S.distLayer) S.distLayer.setStyle(f => districtStyle(f.properties.name));
+  if (S.lgLayer) S.lgLayer.setStyle(f => lgStyle(f.properties.name));
+}
+
+// Local Govt options cascade to whichever district is in effect — 'all'
+// falls back to showing the district that actually has parcel data,
+// rather than all 237 units across the province at once.
+function populateLocalGovOptions() {
+  const el = $('#fLocal');
+  if (!el) return;
+  const effective = S.district === 'all' ? S.stats.district : S.district;
+  const names = (S.lgByDistrict[effective] || []).slice();
+  fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
+  el.disabled = false;
+  el.removeAttribute('title');
+  const pill = el.closest('.fld');
+  if (pill) pill.classList.remove('fld--disabled');
+}
+
+function zoomToDistrict(name) {
+  const target = name === 'all' ? S.stats.district : name;
+  const b = S.districtBounds && S.districtBounds[target];
+  if (b) { map.fitBounds(b, { padding: [24, 24] }); return; }
+  if (name === 'all') {
+    const bb = S.stats.bbox;
+    map.fitBounds(L.latLngBounds([bb[1], bb[0]], [bb[3], bb[2]]), { padding: [16, 16] });
+  }
+}
+
+function zoomToLocalGov(name) {
+  if (name === 'all') return zoomToDistrict(S.district);
+  const b = S.lgBounds && S.lgBounds[name];
+  if (b) map.fitBounds(b, { padding: [24, 24] });
+}
+
+// A district other than the one with real parcel data is a legitimate
+// thing to explore (its boundary is real), but the map has no parcels
+// to show there — say so rather than leaving an unexplained empty map.
+function updateDataAvailabilityNote() {
+  const effective = S.district === 'all' ? S.stats.district : S.district;
+  if (effective !== S.stats.district) {
+    note(`No land use parcels are available for <strong>${esc(effective)}</strong> yet — ` +
+         `showing its boundary only. Parcel data currently covers ${esc(S.stats.district)}.`);
+  } else {
+    note('');
+  }
 }
 
 function loadLayer(group, file) {
@@ -630,8 +756,7 @@ function buildFilters() {
 
   fill('#fLocal', [['all', 'Not available']]);
   const fLocalEl = $('#fLocal');
-  if (fLocalEl) fLocalEl.title = 'Tehsil-level boundaries are not in the source data.';
-  loadLocalGov();
+  if (fLocalEl) fLocalEl.title = 'Local government boundaries have not loaded yet.';
   buildSearchIndex();
 }
 
@@ -647,33 +772,10 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-/* ── local government ────────────────────────────────────────────
-   The source layer has no local-government, tehsil or union-council
-   attribute, so this cannot be derived from the data alone. Supply
-   boundaries as data/local_govt.geojson — any polygon layer whose
-   features carry a name (name / NAME / lg_name / Tehsil / UC) — and
-   each parcel is assigned by point-in-polygon on its centre, which
-   switches the filter on. Absent that file the control stays off
-   rather than showing a fabricated division.                        */
-function loadLocalGov() {
-  fetch('data/local_govt.geojson')
-    .then(r => r.ok ? r.json() : Promise.reject('absent'))
-    .then(gj => {
-      S.lgAreas = (gj.features || []).map(f => ({
-        name: String(f.properties && (f.properties.name || f.properties.NAME ||
-              f.properties.lg_name || f.properties.Tehsil || f.properties.UC) || 'Unnamed'),
-        rings: ringsOf(f.geometry)
-      })).filter(a => a.rings.length);
-      if (!S.lgAreas.length) return note('data/local_govt.geojson holds no usable polygons.');
-      if (S.loaded === S.stats.manifest.length) assignLocalGov();
-      else S.pendingLgAssign = true;
-    })
-    .catch(() => note(
-      'Local government boundaries are not in the source layer. Add ' +
-      '<code>data/local_govt.geojson</code> — a polygon layer with a name ' +
-      'on each feature — and this filter switches on automatically.'));
-}
-
+/* ── local government point-in-polygon ───────────────────────────
+   S.lgAreas is populated by loadAdminBoundaries(), filtered to
+   whichever district actually has parcel data loaded. Each parcel is
+   assigned by point-in-polygon on its bounding-box centre. */
 function ringsOf(g) {
   if (!g) return [];
   if (g.type === 'Polygon') return [g.coordinates];
@@ -710,16 +812,16 @@ function assignLocalGov() {
   });
   Object.values(S.layers).forEach(stamp);
 
-  const names = [...new Set(S.props.map(p => p.lg).filter(Boolean))].sort();
-  fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
-  const el = $('#fLocal');
-  if (el) {
-    el.disabled = false;
-    el.removeAttribute('title');
-    const pill = el.closest('.fld');
-    if (pill) pill.classList.remove('fld--disabled');
+  // This assignment belongs to S.stats.district specifically. If the
+  // user has already navigated to a different district in the (brief)
+  // time this took, populateLocalGovOptions() already has the right
+  // list for wherever they are now — don't clobber it.
+  const effective = S.district === 'all' ? S.stats.district : S.district;
+  if (effective === S.stats.district) {
+    const names = [...new Set(S.props.map(p => p.lg).filter(Boolean))].sort();
+    fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
+    note('');
   }
-  note('');
   refreshStats();
 }
 
@@ -1150,11 +1252,32 @@ function wire() {
 
   on('#fDistrict', 'change', e => {
     S.district = e.target.value;
+    S.localGov = 'all';   // a previous LG pick may not belong to the new district
+    populateLocalGovOptions();
+    updateHighlight();
+    zoomToDistrict(S.district);
+    updateDataAvailabilityNote();
     markActive('#fDistrict', S.district !== 'all');
+    markActive('#fLocal', false);
     afterFilter();
   });
   on('#fLocal', 'change', e => {
     S.localGov = e.target.value;
+    if (S.localGov !== 'all') {
+      // Picking an LG from the full "All districts" list should bring
+      // its parent district along, so the two controls stay consistent.
+      const entry = S.lgIndex.find(a => a.name === S.localGov);
+      if (entry && entry.district && entry.district !== S.district) {
+        S.district = entry.district;
+        populateLocalGovOptions();
+        const elL = $('#fLocal'); if (elL) elL.value = S.localGov;
+        const elD = $('#fDistrict'); if (elD) elD.value = S.district;
+        updateDataAvailabilityNote();
+        markActive('#fDistrict', S.district !== 'all');
+      }
+    }
+    updateHighlight();
+    zoomToLocalGov(S.localGov);
     markActive('#fLocal', S.localGov !== 'all');
     afterFilter();
   });
@@ -1199,6 +1322,9 @@ function resetAll() {
   hideSugg();
   syncAllLayerBoxes();
   syncControls();
+  if (S.lgByDistrict && Object.keys(S.lgByDistrict).length) populateLocalGovOptions();
+  updateHighlight();
+  updateDataAvailabilityNote();
   afterFilter();
   paintTable();
   const b = S.stats.bbox;
