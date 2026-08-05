@@ -5,16 +5,29 @@ Hafizabad Land Use Plan — Esri JSON -> web-ready GeoJSON + statistics.
 - Computes true geodesic (spherical-excess) area per polygon, holes subtracted.
 - Converts Esri rings -> GeoJSON MultiPolygon (CW = outer, CCW = hole).
 - Douglas-Peucker simplification + coordinate quantisation for web delivery.
+- Groups classes by the source's own LU_Class field when the export
+  carries one; falls back to the static Landuse -> group table in
+  groups.json for older exports (like the first Hafizabad file) that
+  shipped LU_Class blank.
 """
-import json, math, os, collections
+import json, os, re, collections
 import numpy as np
 
 SRC = os.environ.get("SRC", "Hafizabad.json")
+SRC_DISTRICT_BOUNDARY = os.environ.get("SRC_DISTRICT_BOUNDARY", "")
+SRC_LG_BOUNDARY = os.environ.get("SRC_LG_BOUNDARY", "")
 OUT = os.environ.get("OUT", ".")
 R = 6371007.181           # WGS84 authalic radius (m)
 SQM_PER_ACRE = 4046.8564224
 TOL = 0.00005             # ~5.5 m simplification tolerance (degrees)
 DP = 5                    # coordinate decimal places (~1.1 m)
+
+# Known data-entry typo in the LU_Class field: every "Orchard" record in
+# the Hafizabad export carries this misspelling instead of "Agriculture".
+# Fix it here rather than silently splitting Agriculture into two groups.
+LU_CLASS_TYPO_FIXES = {
+    "Agricuture": "Agriculture",
+}
 
 
 # ---------------------------------------------------------------- geodesy
@@ -26,8 +39,7 @@ def ring_signed_area(ring):
     lon = np.radians(a[:, 0])
     lat = np.radians(a[:, 1])
     dlon = lon[1:] - lon[:-1]
-    # wrap guard (not needed at this longitude range, kept for safety)
-    dlon = (dlon + np.pi) % (2 * np.pi) - np.pi
+    dlon = (dlon + np.pi) % (2 * np.pi) - np.pi   # wrap guard, unused at this longitude
     s = np.sum(dlon * (np.sin(lat[:-1]) + np.sin(lat[1:])))
     return s * R * R / 2.0
 
@@ -91,6 +103,38 @@ def dedupe(ring):
     return out
 
 
+def slugify(label):
+    """Display label -> filesystem/URL-safe key, e.g. 'Transportation
+    Network' -> 'transportation_network'."""
+    s = re.sub(r"[^a-z0-9]+", "_", label.strip().lower()).strip("_")
+    return s or "other"
+
+
+def esri_rings_to_multipolygon(rings, dp=6):
+    """Esri rings -> GeoJSON MultiPolygon coordinates, no simplification.
+    Used for the district/local-government boundary files, which are a
+    handful of polygons rather than 17,000 parcels, so full precision at
+    a ~0.1 m rounding costs nothing worth trimming."""
+    polys, cur = [], None
+    for r in rings:
+        q = [[round(float(x), dp), round(float(y), dp)] for x, y in r]
+        out = [q[0]]
+        for p in q[1:]:
+            if p != out[-1]:
+                out.append(p)
+        if out[0] != out[-1]:
+            out.append(out[0])
+        if len(out) < 4:
+            continue
+        outer = planar_signed_area(r) < 0     # Esri: CW ring = outer
+        if outer or cur is None:
+            cur = [out]
+            polys.append(cur)
+        else:
+            cur.append(out)
+    return polys
+
+
 # ---------------------------------------------------------------- main
 def main():
     os.makedirs(f"{OUT}/data", exist_ok=True)
@@ -107,6 +151,15 @@ def main():
     maxx, maxy = -1e9, -1e9
     v_before = v_after = 0
 
+    # Real LU_Class seen per Landuse value, keyed by its slug so file
+    # names stay stable even if the source capitalises things differently
+    # between exports. Every Landuse in this file maps to exactly one
+    # LU_Class (checked), so first-seen is authoritative.
+    lu2group_key = {}
+    group_label_by_key = {}
+    lu_class_conflicts = collections.defaultdict(set)
+    district_votes = collections.Counter()
+
     for f in feats:
         att = f["attributes"]
         rings = f.get("geometry", {}).get("rings") or []
@@ -116,6 +169,17 @@ def main():
         lu = (att.get("Landuse") or "").strip() or "Unclassified"
         cat = (att.get("Category") or "").strip() or "Unspecified"
         name = (att.get("Name") or "").strip()
+        district_votes[(att.get("District") or "").strip()] += 1
+
+        raw_class = (att.get("LU_Class") or "").strip()
+        real_class = LU_CLASS_TYPO_FIXES.get(raw_class, raw_class)
+        if real_class:
+            key = slugify(real_class)
+            if lu in lu2group_key and lu2group_key[lu] != key:
+                lu_class_conflicts[lu].add(real_class)
+                lu_class_conflicts[lu].add(group_label_by_key[lu2group_key[lu]])
+            lu2group_key[lu] = key
+            group_label_by_key[key] = real_class
 
         # --- true area, holes subtracted
         area = 0.0
@@ -185,15 +249,37 @@ def main():
             "geometry": {"type": "MultiPolygon", "coordinates": polys},
         })
 
+    # ------------------------------------------------ grouping
+    # Prefer the source's own LU_Class for every Landuse seen. Only fall
+    # back to the static table (groups.json) for a Landuse that never
+    # had a usable LU_Class anywhere in this export — i.e. older data
+    # like the first Hafizabad file, which shipped LU_Class blank.
+    here = os.path.dirname(os.path.abspath(__file__))
+    fallback_groups = json.load(open(os.path.join(here, "groups.json")))
+    fallback_lu2grp = {}
+    for g, classes in fallback_groups.items():
+        for c in classes:
+            fallback_lu2grp[c] = g
+
+    lu2grp = {}
+    group_labels = {}
+    for lu in stats:
+        if lu in lu2group_key:
+            g = lu2group_key[lu]
+            lu2grp[lu] = g
+            group_labels[g] = group_label_by_key[g]
+        else:
+            g = fallback_lu2grp.get(lu, "other")
+            lu2grp[lu] = g
+            group_labels.setdefault(g, g.replace("_", " ").title())
+
+    groups = collections.defaultdict(list)
+    for lu, g in lu2grp.items():
+        groups[g].append(lu)
+    groups = dict(groups)
+
     # ------------------------------------------------ write geometry files
     # Split by land-use class into thematic groups so the map streams in.
-    here = os.path.dirname(os.path.abspath(__file__))
-    groups = json.load(open(os.path.join(here, "groups.json")))
-    lu2grp = {}
-    for g, classes in groups.items():
-        for c in classes:
-            lu2grp[c] = g
-
     buckets = collections.defaultdict(list)
     for ft in out_feats:
         buckets[lu2grp.get(ft["properties"]["lu"], "other")].append(ft)
@@ -210,6 +296,74 @@ def main():
             "kb": round(os.path.getsize(path) / 1024),
         })
 
+    # ------------------------------------------------ boundary files
+    # Optional: the source parcel export names its own district (used
+    # below as the key to filter these files down to), but the display
+    # name and the district outline itself come from the authoritative
+    # boundary layer when one is supplied.
+    parcel_district = district_votes.most_common(1)[0][0] if district_votes else ""
+    district_name = parcel_district
+    district_bbox = None
+
+    if SRC_DISTRICT_BOUNDARY:
+        db = json.load(open(SRC_DISTRICT_BOUNDARY))
+        match = next((f for f in db["features"]
+                      if (f["attributes"].get("District") or "").strip().lower()
+                      == parcel_district.lower()), None)
+        if match:
+            district_name = (match["attributes"].get("District") or parcel_district).strip()
+            rings = match.get("geometry", {}).get("rings") or []
+            polys = esri_rings_to_multipolygon(rings)
+            if polys:
+                xs = [p[0] for poly in polys for ring in poly for p in ring]
+                ys = [p[1] for poly in polys for ring in poly for p in ring]
+                district_bbox = [round(min(xs), 5), round(min(ys), 5),
+                                  round(max(xs), 5), round(max(ys), 5)]
+                with open(f"{OUT}/data/district_boundary.geojson", "w") as fh:
+                    json.dump({
+                        "type": "FeatureCollection",
+                        "features": [{
+                            "type": "Feature",
+                            "properties": {"name": district_name},
+                            "geometry": {"type": "MultiPolygon", "coordinates": polys},
+                        }]
+                    }, fh, separators=(",", ":"))
+            print(f"district boundary: matched '{district_name}' "
+                  f"({len(rings)} ring(s) from {SRC_DISTRICT_BOUNDARY})")
+        else:
+            print(f"** WARNING: no District Boundary record matches "
+                  f"'{parcel_district}' — district name/outline not updated **")
+
+    lg_written = 0
+    if SRC_LG_BOUNDARY:
+        lgsrc = json.load(open(SRC_LG_BOUNDARY))
+        lg_feats = [f for f in lgsrc["features"]
+                    if (f["attributes"].get("District") or "").strip().lower()
+                    == parcel_district.lower()]
+        out_lg = []
+        for f in lg_feats:
+            name = (f["attributes"].get("Local_govt") or "").strip()
+            rings = f.get("geometry", {}).get("rings") or []
+            polys = esri_rings_to_multipolygon(rings)
+            if not name or not polys:
+                continue
+            out_lg.append({
+                "type": "Feature",
+                "properties": {"name": name},
+                "geometry": {"type": "MultiPolygon", "coordinates": polys},
+            })
+        if out_lg:
+            with open(f"{OUT}/data/local_govt.geojson", "w") as fh:
+                json.dump({"type": "FeatureCollection", "features": out_lg},
+                          fh, separators=(",", ":"))
+            lg_written = len(out_lg)
+            print(f"local government: wrote {lg_written} boundaries for "
+                  f"'{parcel_district}' -> " +
+                  ", ".join(sorted(f['properties']['name'] for f in out_lg)))
+        else:
+            print(f"** WARNING: no LG Boundary records match "
+                  f"'{parcel_district}' — data/local_govt.geojson not written **")
+
     # ------------------------------------------------ stats file
     total_area = sum(v["area_m2"] for v in stats.values())
     classes = sorted(
@@ -224,7 +378,7 @@ def main():
         key=lambda d: -d["acres"])
 
     payload = {
-        "district": "Hafizabad",
+        "district": district_name or "Unknown",
         "province": "Punjab",
         "generated": "2026",
         "totals": {
@@ -242,6 +396,7 @@ def main():
         ],
         "classes": classes,
         "groups": groups,
+        "groupLabels": group_labels,
         "manifest": manifest,
         "named_sites": sorted(named, key=lambda d: -d["acres"])[:400],
     }
@@ -250,7 +405,16 @@ def main():
 
     # ------------------------------------------------ report
     print(f"features out : {len(out_feats):,}")
+    print(f"district     : {district_name!r} " +
+          (f"(district boundary supplied)" if SRC_DISTRICT_BOUNDARY else "(no district boundary supplied)"))
+    print(f"local govt   : {lg_written} boundaries written" if lg_written else
+          "local govt   : none (no LG boundary supplied or matched)")
     print(f"classes      : {len(stats)}")
+    print(f"groups       : {len(groups)}  ({', '.join(sorted(group_labels.values()))})")
+    if lu_class_conflicts:
+        print("\n** WARNING: Landuse values with inconsistent LU_Class across records **")
+        for lu, vals in lu_class_conflicts.items():
+            print(f"  {lu}: {sorted(vals)}")
     print(f"total area   : {total_area/SQM_PER_ACRE:,.0f} acres "
           f"({total_area/1e6:,.1f} km2)")
     print(f"bbox         : {minx:.4f},{miny:.4f} -> {maxx:.4f},{maxy:.4f}")
