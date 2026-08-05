@@ -45,10 +45,9 @@ function assignGroupStyles(groups, labels) {
     GROUP_HUE[g] = hit ? hit[1] : HUE_FALLBACK[fi++ % HUE_FALLBACK.length];
   });
   // The source data's own "Commercial" LU_Class also holds schools,
-  // hospitals, and institutional buildings — say so wherever the label
-  // appears, rather than only in the methodology note.
+  // hospitals, and institutional buildings — say so in the label.
   if (GROUP_LABEL.commercial) {
-    GROUP_LABEL.commercial = 'Commercial (Commercial Including Institutional)';
+    GROUP_LABEL.commercial = 'Commercial & Institutional';
   }
 }
 
@@ -97,6 +96,10 @@ const S = {
   lgBounds        : {},    // lg name -> Leaflet LatLngBounds
   highlightDistrict: null, // which district outline is currently drawn
   highlightLG      : null, // which LG outline is currently drawn, if any
+  showDistrict : true,   // District boundary layer visibility (checkbox)
+  showLG       : false,  // Local Govt boundary layer visibility (checkbox)
+  showLanduse  : false,  // land use parcels visibility (checkbox) — master switch
+  showCategory : false,  // dashed outline on Proposed parcels (checkbox)
   cat       : 'all',
   luPick    : null,
   index     : [],          // search index
@@ -145,7 +148,6 @@ function init(stats) {
   const stage = (name, fn) => {
     try { fn(); } catch (e) { console.error('stage failed: ' + name, e); }
   };
-  stage('kpis',    paintKpis);
   stage('filters', buildFilters);    // populates district/land-use selects + search index
   stage('layers',  paintLayerList);   // must precede the ribbon (paints group boxes it reads)
   stage('ribbon',  paintRibbon);
@@ -165,19 +167,10 @@ function setText(sel, v) {
   return !!el;
 }
 
-function paintKpis() {
-  const t = S.stats.totals;
-  const prop = S.stats.categories.find(c => c.name === 'Proposed');
-  const farm = groupTotals().find(g => g.g === 'agriculture');
-  setText('#kpiAcres',    nf(t.acres));
-  setText('#kpiKm',       nf(t.sqkm, 1));
-  setText('#kpiAvg',      nf(t.acres / t.features, 1));
-  setText('#kpiProposed', prop ? nf(prop.pct, 1) : '0');
-  setText('#kpiFarm',     farm ? nf(100 * farm.acres / t.acres, 1) : '0');
-  // figures carried by the earlier layout, if this page still has them
-  setText('#kpiParcels',  nf(t.features));
-  setText('#kpiClasses',  t.classes);
-}
+/* The old KPI strip is gone — its figures now live in the map's own
+   selection summary (#selWhat/#selArea/#selShare), which reflects
+   whatever the user currently has selected rather than fixed totals.
+   See refreshStats() and currentSelectionLabel() below. */
 
 /* ═══════════════════════════════════════════ share ribbon
    Two readings of the same district: the true proportions, then the
@@ -553,6 +546,7 @@ function loadAdminBoundaries() {
 // zoomed in — same colours, just bolder, rather than a totally
 // different treatment that would compete visually with the parcels.
 function districtStyle(name) {
+  if (!S.showDistrict) return { fill: false, stroke: false };
   const selected = name === S.highlightDistrict;
   return {
     fill: true,
@@ -564,9 +558,11 @@ function districtStyle(name) {
   };
 }
 
-// Every Local Govt unit: light red outline, always visible. The
-// selected one gets a heavier, fully-opaque outline plus a light fill.
+// Every Local Govt unit: light red outline, always visible when the
+// master checkbox is on. The selected one gets a heavier, fully-opaque
+// outline plus a light fill.
 function lgStyle(name) {
+  if (!S.showLG) return { fill: false, stroke: false };
   const selected = name === S.highlightLG;
   return {
     fill: selected,
@@ -679,6 +675,7 @@ function loadLayer(group, file) {
 // a parcel is drawn at all. A Local Govt mismatch alone doesn't hide a
 // parcel, it dims it (see styleFor), so it's deliberately left out here.
 function visibleIgnoringLG(p) {
+  if (!S.showLanduse)                        return false;
   if (S.offClasses.has(p.lu))               return false;
   if (S.cat !== 'all' && p.ct !== S.cat)    return false;
   if (S.luPick && p.lu !== S.luPick)        return false;
@@ -696,9 +693,9 @@ function visible(p) {
   return true;
 }
 
-// "Transparent to 60%" read as 60% see-through — 40% opacity retained.
+// "80% transparent" read as 80% see-through — 20% opacity retained.
 // Named so the number is a one-line tweak if a different reading was meant.
-const LG_DIM_OPACITY = 0.4;
+const LG_DIM_OPACITY = 0.2;
 
 function styleFor(f) {
   const p = f.properties;
@@ -719,13 +716,15 @@ function styleFor(f) {
       interactive : false
     };
   }
+  const proposedMark = S.showCategory && p.ct === 'Proposed';
   return {
     fill        : true,
     fillColor   : c,
     fillOpacity : S.luPick ? 0.88 : 0.72,
     stroke      : true,
-    color       : shade(c, -0.42),
-    weight      : S.luPick ? 0.9 : 0.45,
+    color       : proposedMark ? '#8a1f14' : shade(c, -0.42),
+    weight      : proposedMark ? 1.6 : (S.luPick ? 0.9 : 0.45),
+    dashArray   : proposedMark ? '3 2' : null,
     opacity     : 0.9,
     interactive : true
   };
@@ -820,25 +819,99 @@ function afterFilter() {
     paintLegend();
     readRibbon();
     refreshStats();
+    updateLGSplitOverlay();
   });
 }
 
+/* ── true boundary-straddling split (Turf.js) ─────────────────────
+   assignLocalGov()'s point-in-polygon test uses each parcel's centre,
+   so a parcel that genuinely straddles an LG boundary is treated as
+   wholly inside or outside it. This computes the real intersection —
+   but only for the small number of parcels whose bounding box actually
+   crosses the selected LG's edge; a fast bbox check rejects everything
+   else before any expensive geometry ops run. */
+let lgSplitLayer = null;
+
+function updateLGSplitOverlay() {
+  if (lgSplitLayer) { map.removeLayer(lgSplitLayer); lgSplitLayer = null; }
+  if (S.localGov === 'all' || typeof turf === 'undefined') return;
+
+  const lgEntry = S.lgIndex.find(a => a.name === S.localGov);
+  const lgBounds = S.lgBounds && S.lgBounds[S.localGov];
+  if (!lgEntry || !lgBounds) return;
+
+  let lgPoly;
+  try { lgPoly = turf.multiPolygon(lgEntry.rings); }
+  catch (e) { console.error('LG split: bad LG geometry', e); return; }
+
+  const overlayFeatures = [];
+  Object.values(S.layers).forEach(lyr => {
+    lyr.eachLayer(l => {
+      const p = l.feature.properties;
+      if (!visibleIgnoringLG(p)) return;
+      if (!l.getBounds().intersects(lgBounds)) return;   // fast reject, no overlap at all
+
+      let parcelPoly, inter, interArea, totalArea;
+      try {
+        parcelPoly = turf.multiPolygon(l.feature.geometry.coordinates);
+        inter = turf.intersect(parcelPoly, lgPoly);
+        if (!inter) return;
+        interArea = turf.area(inter);
+        totalArea = turf.area(parcelPoly);
+      } catch (e) { return; }   // a handful of messy real-world rings can fail turf's ops — skip, don't break the map
+      if (!totalArea) return;
+
+      const frac = interArea / totalArea;
+      // Near-total overlaps either way are already handled correctly by
+      // the simple per-parcel dim/true-colour styling — only add an
+      // overlay for a genuine partial straddle.
+      if (frac > 0.98 || frac < 0.02) return;
+
+      overlayFeatures.push({
+        type: 'Feature',
+        properties: { lu: p.lu },
+        geometry: inter.geometry
+      });
+    });
+  });
+
+  if (!overlayFeatures.length) return;
+  lgSplitLayer = L.geoJSON({ type: 'FeatureCollection', features: overlayFeatures }, {
+    interactive: false,
+    style: f => {
+      const c = S.colour[f.properties.lu] || '#9aa79f';
+      return { fill: true, fillColor: c, fillOpacity: 0.72,
+               stroke: true, color: shade(c, -0.42), weight: 0.45, opacity: 0.9 };
+    }
+  }).addTo(map);
+}
+
 function refreshStats() {
+  setText('#selWhat', currentSelectionLabel());
   const sel = S.props.filter(visible);
   if (!sel.length) {
-    ['#selCount', '#selArea', '#selShare', '#selMed'].forEach(s => $(s).textContent = '—');
-    if (S.props.length) $('#selCount').textContent = '0';
+    ['#selCount', '#selArea', '#selShare'].forEach(s => setText(s, '—'));
+    if (S.props.length) setText('#selCount', '0');
     return;
   }
   const acres = sel.reduce((s, p) => s + p.a, 0);
-  const sorted = sel.map(p => p.a).sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  const med = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  setText('#selCount', nf(sel.length));
+  setText('#selArea',  nf(acres) + ' ac');
+  setText('#selShare', nf(100 * acres / S.stats.totals.acres, 2) + '%');
+}
 
-  $('#selCount').textContent = nf(sel.length);
-  $('#selArea').textContent  = nf(acres) + ' ac';
-  $('#selShare').textContent = nf(100 * acres / S.stats.totals.acres, 2) + '%';
-  $('#selMed').textContent   = med < 1 ? nf(med, 3) + ' ac' : nf(med, 2) + ' ac';
+// What is the user currently looking at? Named class > a solo'd group >
+// a specific Local Govt > a specific district > a category filter >
+// falls back to "Whole district" when nothing narrows the view.
+function currentSelectionLabel() {
+  if (S.luPick) return S.luPick;
+  const active = orderedGroupTotals().filter(d =>
+    (S.stats.groups[d.g] || []).some(lu => !S.offClasses.has(lu)));
+  if (active.length === 1) return GROUP_LABEL[active[0].g] || active[0].g;
+  if (S.localGov !== 'all') return S.localGov;
+  if (S.district !== 'all') return S.district;
+  if (S.cat !== 'all') return S.cat + ' only';
+  return 'Whole district';
 }
 
 /* ═══════════════════════════════════════════ filters */
@@ -1410,6 +1483,24 @@ function wire() {
   });
 
   on('#fReset', 'click', resetAll);
+
+  /* ── layer-visibility checkboxes: District/LG/Land Use/Category ── */
+  on('#visDistrict', 'change', e => {
+    S.showDistrict = e.target.checked;
+    if (S.distLayer) S.distLayer.setStyle(f => districtStyle(f.properties.name));
+  });
+  on('#visLG', 'change', e => {
+    S.showLG = e.target.checked;
+    if (S.lgLayer) S.lgLayer.setStyle(f => lgStyle(f.properties.name));
+  });
+  on('#visLanduse', 'change', e => {
+    S.showLanduse = e.target.checked;
+    afterFilter();
+  });
+  on('#visCategory', 'change', e => {
+    S.showCategory = e.target.checked;
+    afterFilter();
+  });
 }
 
 function resetAll() {
@@ -1419,6 +1510,12 @@ function resetAll() {
   S.localGov = 'all';
   S.luPick = null;
   S.query = '';
+  S.showDistrict = true;
+  S.showLG = false;
+  S.showLanduse = false;
+  S.showCategory = false;
+  const visMap = { visDistrict: true, visLG: false, visLanduse: false, visCategory: false };
+  Object.keys(visMap).forEach(id => { const el = $('#' + id); if (el) el.checked = visMap[id]; });
   const tblSearchEl = $('#tblSearch'); if (tblSearchEl) tblSearchEl.value = '';
   const fSearchEl = $('#fSearch');     if (fSearchEl) fSearchEl.value = '';
   hideSugg();
