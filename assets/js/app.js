@@ -417,7 +417,23 @@ function buildMap() {
   legend.addTo(map);
   paintLegend();
 
+  loadDistrictOutline();
   S.stats.manifest.forEach(m => loadLayer(m.group, m.file));
+}
+
+/* Optional: an authoritative district outline, drawn under the parcels.
+   Absent data/district_boundary.geojson, this quietly does nothing —
+   the map still works from the parcel bounding box alone. */
+function loadDistrictOutline() {
+  fetch('data/district_boundary.geojson')
+    .then(r => r.ok ? r.json() : Promise.reject('absent'))
+    .then(gj => {
+      L.geoJSON(gj, {
+        interactive: false,
+        style: { fill: false, color: '#b8952a', weight: 2.5, dashArray: '6 4', opacity: 0.85 }
+      }).addTo(map);
+    })
+    .catch(() => {});
 }
 
 function loadLayer(group, file) {
@@ -445,8 +461,14 @@ function loadLayer(group, file) {
       S.loaded++;
       countUp();
       if (S.loaded === S.stats.manifest.length) {
-        refreshStats();
-        if (S.pendingLgAssign) { S.pendingLgAssign = false; assignLocalGov(); }
+        // Isolated so a problem here can't fall through into the
+        // .catch() below and double-count this layer as failed.
+        try {
+          refreshStats();
+          if (S.pendingLgAssign) { S.pendingLgAssign = false; assignLocalGov(); }
+        } catch (e) {
+          console.error('post-load finalisation failed', e);
+        }
       }
     })
     .catch(err => {
