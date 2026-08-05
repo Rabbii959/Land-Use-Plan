@@ -36,18 +36,26 @@
   <section class="filters" aria-label="Filter the plan">
     <div class="filters__row">
       <div class="fld">
+        <input type="checkbox" class="fld__vis" id="visDistrict" checked
+               title="Show district boundaries on the map" aria-label="Show district boundaries on the map">
         <label class="fld__l" for="fDistrict">District</label>
         <select class="sel" id="fDistrict"></select>
       </div>
       <div class="fld fld--disabled">
+        <input type="checkbox" class="fld__vis" id="visLG"
+               title="Show Local Govt boundaries on the map" aria-label="Show Local Govt boundaries on the map">
         <label class="fld__l" for="fLocal">Local Govt</label>
         <select class="sel" id="fLocal" disabled></select>
       </div>
       <div class="fld">
+        <input type="checkbox" class="fld__vis" id="visLanduse"
+               title="Show land use parcels on the map" aria-label="Show land use parcels on the map">
         <label class="fld__l" for="fLanduse">Land Use</label>
         <select class="sel" id="fLanduse"></select>
       </div>
       <div class="fld">
+        <input type="checkbox" class="fld__vis" id="visCategory"
+               title="Outline proposed parcels on the map" aria-label="Outline proposed parcels on the map">
         <label class="fld__l" for="fCategory">Category</label>
         <select class="sel" id="fCategory">
           <option value="all">All</option>
@@ -67,77 +75,52 @@
         </div>
       </div>
 
-      <button class="btn btn--quiet" id="fReset">Reset</button>
+      <button class="btn btn--icon" id="fReset" aria-label="Reset all filters" title="Reset all filters">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path d="M2.5 8a5.5 5.5 0 1 1 1.83 4.1M2.5 8V4.5M2.5 8H6"
+                fill="none" stroke="currentColor" stroke-width="1.7"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
     </div>
     <p class="filters__note" id="fNote" hidden></p>
   </section>
 
-  <!-- ══════════════════════════════════════ key figures -->
-  <section class="kpis" aria-label="Key figures">
-    <div class="kpi">
-      <span class="kpi__n" id="kpiAcres">—</span>
-      <span class="kpi__u">acres</span>
-      <span class="kpi__l">Planned area</span>
-    </div>
-    <div class="kpi">
-      <span class="kpi__n" id="kpiKm">—</span>
-      <span class="kpi__u">km²</span>
-      <span class="kpi__l">Land area</span>
-    </div>
-    <div class="kpi">
-      <span class="kpi__n" id="kpiAvg">—</span>
-      <span class="kpi__u">acres</span>
-      <span class="kpi__l">Average parcel</span>
-    </div>
-    <div class="kpi">
-      <span class="kpi__n" id="kpiProposed">—</span>
-      <span class="kpi__u">%</span>
-      <span class="kpi__l">Area newly proposed</span>
-    </div>
-    <div class="kpi">
-      <span class="kpi__n" id="kpiFarm">—</span>
-      <span class="kpi__u">%</span>
-      <span class="kpi__l">Agricultural land</span>
-    </div>
-  </section>
-
-  <!-- ══════════════════════════════════════ map + panel -->
+  <!-- ══════════════════════════════════════ map (legend floats on it) -->
   <section class="board" aria-labelledby="mapH">
-    <div class="board__map">
-      <div class="board__bar">
-        <h2 class="h-sec" id="mapH">Land use map</h2>
-        <div class="seg" role="group" aria-label="Base map">
-          <button class="seg__b is-on" data-base="street">Street</button>
-          <button class="seg__b" data-base="satellite">Satellite</button>
-          <button class="seg__b" data-base="plain">Plain</button>
-        </div>
-      </div>
-      <div id="map" tabindex="0"></div>
-      <div class="board__foot">
-        <span id="mapCount">Loading parcels…</span>
-        <button class="lnk" id="btnReset">Reset view</button>
+    <div class="board__bar">
+      <h2 class="h-sec" id="mapH">Land use map</h2>
+      <div class="seg" role="group" aria-label="Base map">
+        <button class="seg__b is-on" data-base="street">Street</button>
+        <button class="seg__b" data-base="satellite">Satellite</button>
+        <button class="seg__b" data-base="plain">Plain</button>
       </div>
     </div>
 
-    <aside class="board__side">
-      <div class="panel panel--grow">
-        <div class="h-pan-row">
+    <div class="board__mapwrap">
+      <div id="map" tabindex="0"></div>
+
+      <aside class="legend-float" aria-label="Land use classes and current selection">
+        <div class="legend-float__head">
           <h3 class="h-pan">Land use classes</h3>
           <button class="lnk" id="btnAll">All on</button>
         </div>
-        <div id="layers" class="legend" role="tree" aria-label="Land use classes"></div>
-      </div>
 
-      <div class="panel">
-        <h3 class="h-pan">Current selection</h3>
-        <dl class="mini" id="selStats">
-          <div><dt>Parcels</dt><dd id="selCount">—</dd></div>
+        <dl class="legend-float__sel" id="selStats">
+          <div><dt id="selWhatLbl">Selection</dt><dd id="selWhat">Whole district</dd></div>
           <div><dt>Area</dt><dd id="selArea">—</dd></div>
-          <div><dt>Share of district</dt><dd id="selShare">—</dd></div>
-          <div><dt>Median parcel</dt><dd id="selMed">—</dd></div>
+          <div><dt>Share</dt><dd id="selShare">—</dd></div>
+          <div><dt>Parcels</dt><dd id="selCount">—</dd></div>
         </dl>
-      </div>
-    </aside>
+
+        <div id="layers" class="legend" role="tree" aria-label="Land use classes"></div>
+      </aside>
+    </div>
+
+    <div class="board__foot">
+      <span id="mapCount">Loading parcels…</span>
+      <button class="lnk" id="btnReset">Reset view</button>
+    </div>
   </section>
 
   <!-- ══════════════════════════════════════ signature: the district as one bar -->
@@ -224,6 +207,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>
