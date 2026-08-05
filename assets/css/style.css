@@ -244,32 +244,193 @@ body{
   .btn--quiet{flex:1 1 100%}
 }
 
-/* ───────────────────────────────────────────── key figures */
-.kpis{
-  display:grid;gap:1px;
-  grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
-  background:var(--rule);
+/* ───────────────────────────────────────────── map board
+   The map now takes the full section width; the legend + current-
+   selection summary float on top of it as a translucent panel rather
+   than sitting in a separate side column. */
+.board{
+  background:var(--card);
   border:1px solid var(--rule);
   border-radius:var(--r);
   overflow:hidden;
+  box-shadow:var(--shadow);
 }
-.kpi{
+.board__bar{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;padding:13px 16px;
+  border-bottom:1px solid var(--rule);
+}
+.board__mapwrap{position:relative}
+#map{
+  height:clamp(480px,72vh,780px);
+  width:100%;
+  background:#e9ece4;
+}
+.board__foot{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;padding:10px 16px;
+  border-top:1px solid var(--rule);
+  font:500 12px var(--f-mono);color:var(--mute);
+}
+
+.legend-float{
+  position:absolute;top:12px;right:12px;z-index:850;
+  width:264px;max-width:calc(100% - 24px);
+  background:rgba(255,255,255,.96);
+  border:1px solid var(--rule);
+  border-radius:var(--r);
+  box-shadow:0 10px 28px rgba(16,38,28,.22);
+  padding:10px 11px 8px;
+  max-height:calc(100% - 24px);
+  display:flex;flex-direction:column;
+}
+.legend-float__head{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:8px;margin-bottom:6px;
+}
+.legend-float__sel{
+  display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;
+  margin:0 0 8px;padding:7px 8px;
+  background:var(--rule-2);border-radius:5px;
+}
+.legend-float__sel div{display:flex;flex-direction:column}
+.legend-float__sel dt{font:600 8.5px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
+.legend-float__sel dd{margin:0;font:700 12px var(--f-mono);color:var(--grn-800);font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#selWhat{grid-column:1/-1;font-size:12.5px}
+
+.panel{
   background:var(--card);
-  padding:16px 18px 14px;
-  display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;
+  border:1px solid var(--rule);
+  border-radius:var(--r);
+  padding:15px 16px;
+  box-shadow:var(--shadow);
 }
-.kpi__n{
-  font:600 clamp(24px,3.4vw,34px)/1 var(--f-mono);
-  letter-spacing:-.03em;
+.panel--grow{display:flex;flex-direction:column;gap:11px}
+
+/* ───────────────────────────────────────────── controls */
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:var(--r);overflow:hidden}
+.seg--full{display:flex;width:100%;margin-top:10px}
+.seg__b{
+  flex:1;
+  border:0;border-right:1px solid var(--rule);
+  background:var(--card);
+  color:var(--ink-2);
+  font:600 12px var(--f-body);
+  padding:7px 13px;cursor:pointer;
+  transition:background .14s ease,color .14s ease;
+}
+.seg__b:last-child{border-right:0}
+.seg__b:hover{background:var(--rule-2)}
+.seg__b.is-on{background:var(--grn-700);color:#fff}
+
+.lnk{
+  border:0;background:none;padding:0;cursor:pointer;
+  font:600 12px var(--f-body);
+  color:var(--grn-700);
+  text-decoration:underline;text-underline-offset:3px;
+}
+.btn{
+  border:1px solid var(--grn-700);
+  background:var(--grn-700);color:#fff;
+  font:600 12.5px var(--f-body);
+  padding:8px 15px;border-radius:var(--r);cursor:pointer;
+  transition:background .14s ease;
+}
+.btn:hover{background:var(--grn-800)}
+.btn--icon{
+  display:flex;align-items:center;justify-content:center;
+  width:38px;height:38px;padding:0;flex:none;
+}
+.inp{
+  border:1px solid var(--rule);
+  border-radius:var(--r);
+  padding:8px 12px;
+  font:400 13px var(--f-body);
+  background:var(--card);color:var(--ink);
+  min-width:190px;
+}
+
+/* filter-pill visibility checkboxes */
+.fld__vis{
+  accent-color:var(--grn-700);
+  width:14px;height:14px;flex:none;cursor:pointer;
+}
+
+/* ───────────────────────────────────────────── legend tree
+   Two levels: a Land Use Class row (chevron + checkbox + swatch)
+   that expands to show its individual land uses, each with its own
+   checkbox and swatch, indented beneath. Compact sizing throughout
+   since this now lives in a floating panel, not a full side column. */
+.legend{
+  display:flex;flex-direction:column;
+  max-height:min(52vh,440px);overflow-y:auto;
+  margin:0 -5px;padding:0 5px;
+}
+
+.lgroup{border-bottom:1px solid var(--rule-2)}
+.lgroup:last-child{border-bottom:0}
+
+.lgroup__head{display:flex;align-items:center;gap:1px;padding:1px 0}
+
+.lgroup__chev{
+  flex:none;width:18px;height:18px;
+  display:flex;align-items:center;justify-content:center;
+  border:0;background:none;color:var(--grn-700);
+  border-radius:4px;cursor:pointer;
+  transition:transform .15s ease,background .12s ease;
+}
+.lgroup__chev:hover{background:var(--rule-2)}
+.lgroup__chev svg{transition:transform .15s ease}
+.lgroup__chev[aria-expanded="true"] svg{transform:rotate(90deg)}
+
+.lgroup__row{
+  flex:1;display:flex;align-items:center;gap:7px;
+  padding:5px 5px 5px 1px;border-radius:4px;
+  cursor:pointer;min-width:0;
+  transition:background .12s ease;
+}
+.lgroup__row:hover{background:var(--rule-2)}
+.lgroup__box{accent-color:var(--grn-700);width:12.5px;height:12.5px;flex:none;cursor:pointer}
+.lgroup__sw{width:11px;height:11px;border-radius:3px;flex:none;box-shadow:inset 0 0 0 1px rgba(16,38,28,.22)}
+.lgroup__nm{flex:1;font:700 11.5px var(--f-body);color:var(--ink);min-width:0}
+.lgroup__n{font:600 9.5px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
+
+.lchildren{display:flex;flex-direction:column;padding:0 0 3px 18px}
+.lchildren[hidden]{display:none}
+.lchild__row{
+  display:flex;align-items:center;gap:7px;
+  padding:3px 5px;border-radius:4px;
+  cursor:pointer;min-width:0;
+  transition:background .12s ease;
+}
+.lchild__row:hover{background:var(--rule-2)}
+.lchild__box{accent-color:var(--grn-700);width:11px;height:11px;flex:none;cursor:pointer}
+.lchild__sw{width:9px;height:9px;border-radius:2px;flex:none;box-shadow:inset 0 0 0 1px rgba(16,38,28,.22)}
+.lchild__nm{flex:1;font-size:10.5px;color:var(--ink-2);min-width:0}
+.lchild__n{font:500 9px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
+
+/* dim a row when its box is unchecked — toggled by JS, not :has(),
+   for the same browser-support reasons as the filter pills above */
+.lgroup__row.is-off .lgroup__nm,
+.lgroup__row.is-off .lgroup__n{opacity:.45}
+.lchild__row.is-off .lchild__nm,
+.lchild__row.is-off .lchild__n{opacity:.42}
+
+/* ───────────────────────────────────────────── mini stats */
+.mini{margin:12px 0 0;display:flex;flex-direction:column;gap:0}
+.mini > div{
+  display:flex;align-items:baseline;justify-content:space-between;
+  gap:12px;padding:7px 0;
+  border-bottom:1px solid var(--rule-2);
+}
+.mini > div:last-child{border-bottom:0}
+.mini dt{font-size:12.5px;color:var(--mute)}
+.mini dd{
+  margin:0;
+  font:600 13.5px var(--f-mono);
   color:var(--grn-800);
   font-variant-numeric:tabular-nums;
-}
-.kpi__u{font-size:12.5px;color:var(--mute)}
-.kpi__l{
-  flex-basis:100%;margin-top:7px;
-  font:600 10.5px/1.3 var(--f-mono);
-  letter-spacing:.1em;text-transform:uppercase;
-  color:var(--ink-2);
 }
 
 /* ───────────────────────────────────────────── signature ribbon */
@@ -326,160 +487,6 @@ body{
   cursor:pointer;color:var(--grn-700);
   text-decoration:underline;text-underline-offset:3px;
   font-size:12.5px;
-}
-
-/* ───────────────────────────────────────────── map board */
-.board{
-  display:grid;gap:var(--sp);
-  grid-template-columns:minmax(0,1fr) 316px;
-  align-items:start;
-}
-.board__map{
-  background:var(--card);
-  border:1px solid var(--rule);
-  border-radius:var(--r);
-  overflow:hidden;
-  box-shadow:var(--shadow);
-}
-.board__bar{
-  display:flex;align-items:center;justify-content:space-between;
-  gap:12px;padding:13px 16px;
-  border-bottom:1px solid var(--rule);
-}
-#map{
-  height:clamp(440px,64vh,720px);
-  width:100%;
-  background:#e9ece4;
-}
-.board__foot{
-  display:flex;align-items:center;justify-content:space-between;
-  gap:12px;padding:10px 16px;
-  border-top:1px solid var(--rule);
-  font:500 12px var(--f-mono);color:var(--mute);
-}
-
-.board__side{display:flex;flex-direction:column;gap:var(--sp)}
-.panel{
-  background:var(--card);
-  border:1px solid var(--rule);
-  border-radius:var(--r);
-  padding:15px 16px;
-  box-shadow:var(--shadow);
-}
-.panel--grow{display:flex;flex-direction:column;gap:11px}
-
-/* ───────────────────────────────────────────── controls */
-.seg{display:inline-flex;border:1px solid var(--rule);border-radius:var(--r);overflow:hidden}
-.seg--full{display:flex;width:100%;margin-top:10px}
-.seg__b{
-  flex:1;
-  border:0;border-right:1px solid var(--rule);
-  background:var(--card);
-  color:var(--ink-2);
-  font:600 12px var(--f-body);
-  padding:7px 13px;cursor:pointer;
-  transition:background .14s ease,color .14s ease;
-}
-.seg__b:last-child{border-right:0}
-.seg__b:hover{background:var(--rule-2)}
-.seg__b.is-on{background:var(--grn-700);color:#fff}
-
-.lnk{
-  border:0;background:none;padding:0;cursor:pointer;
-  font:600 12px var(--f-body);
-  color:var(--grn-700);
-  text-decoration:underline;text-underline-offset:3px;
-}
-.btn{
-  border:1px solid var(--grn-700);
-  background:var(--grn-700);color:#fff;
-  font:600 12.5px var(--f-body);
-  padding:8px 15px;border-radius:var(--r);cursor:pointer;
-  transition:background .14s ease;
-}
-.btn:hover{background:var(--grn-800)}
-.inp{
-  border:1px solid var(--rule);
-  border-radius:var(--r);
-  padding:8px 12px;
-  font:400 13px var(--f-body);
-  background:var(--card);color:var(--ink);
-  min-width:190px;
-}
-
-/* ───────────────────────────────────────────── legend tree
-   Two levels: a Land Use Class row (chevron + checkbox + swatch)
-   that expands to show its individual land uses, each with its own
-   checkbox and swatch, indented beneath. */
-.legend{
-  display:flex;flex-direction:column;
-  max-height:420px;overflow-y:auto;
-  margin:0 -6px;padding:0 6px;
-}
-
-.lgroup{border-bottom:1px solid var(--rule-2)}
-.lgroup:last-child{border-bottom:0}
-
-.lgroup__head{display:flex;align-items:center;gap:2px;padding:2px 0}
-
-.lgroup__chev{
-  flex:none;width:22px;height:22px;
-  display:flex;align-items:center;justify-content:center;
-  border:0;background:none;color:var(--grn-700);
-  border-radius:5px;cursor:pointer;
-  transition:transform .15s ease,background .12s ease;
-}
-.lgroup__chev:hover{background:var(--rule-2)}
-.lgroup__chev svg{transition:transform .15s ease}
-.lgroup__chev[aria-expanded="true"] svg{transform:rotate(90deg)}
-
-.lgroup__row{
-  flex:1;display:flex;align-items:center;gap:9px;
-  padding:7px 7px 7px 2px;border-radius:var(--r);
-  cursor:pointer;min-width:0;
-  transition:background .12s ease;
-}
-.lgroup__row:hover{background:var(--rule-2)}
-.lgroup__box{accent-color:var(--grn-700);width:15px;height:15px;flex:none;cursor:pointer}
-.lgroup__sw{width:14px;height:14px;border-radius:3px;flex:none;box-shadow:inset 0 0 0 1px rgba(16,38,28,.22)}
-.lgroup__nm{flex:1;font:700 13.5px var(--f-body);color:var(--ink);min-width:0}
-.lgroup__n{font:600 11px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
-
-.lchildren{display:flex;flex-direction:column;padding:0 0 4px 22px}
-.lchildren[hidden]{display:none}
-.lchild__row{
-  display:flex;align-items:center;gap:9px;
-  padding:5px 7px;border-radius:var(--r);
-  cursor:pointer;min-width:0;
-  transition:background .12s ease;
-}
-.lchild__row:hover{background:var(--rule-2)}
-.lchild__box{accent-color:var(--grn-700);width:13px;height:13px;flex:none;cursor:pointer}
-.lchild__sw{width:11px;height:11px;border-radius:2px;flex:none;box-shadow:inset 0 0 0 1px rgba(16,38,28,.22)}
-.lchild__nm{flex:1;font-size:12.5px;color:var(--ink-2);min-width:0}
-.lchild__n{font:500 10.5px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
-
-/* dim a row when its box is unchecked — toggled by JS, not :has(),
-   for the same browser-support reasons as the filter pills above */
-.lgroup__row.is-off .lgroup__nm,
-.lgroup__row.is-off .lgroup__n{opacity:.45}
-.lchild__row.is-off .lchild__nm,
-.lchild__row.is-off .lchild__n{opacity:.42}
-
-/* ───────────────────────────────────────────── mini stats */
-.mini{margin:12px 0 0;display:flex;flex-direction:column;gap:0}
-.mini > div{
-  display:flex;align-items:baseline;justify-content:space-between;
-  gap:12px;padding:7px 0;
-  border-bottom:1px solid var(--rule-2);
-}
-.mini > div:last-child{border-bottom:0}
-.mini dt{font-size:12.5px;color:var(--mute)}
-.mini dd{
-  margin:0;
-  font:600 13.5px var(--f-mono);
-  color:var(--grn-800);
-  font-variant-numeric:tabular-nums;
 }
 
 /* ───────────────────────────────────────────── cards & charts */
@@ -601,14 +608,21 @@ body{
 
 /* ───────────────────────────────────────────── responsive */
 @media (max-width:1080px){
-  .board{grid-template-columns:1fr}
-  .board__side{flex-direction:row;flex-wrap:wrap}
-  .board__side .panel{flex:1 1 260px}
   .charts{grid-template-columns:1fr}
-  .legend{max-height:280px}
 }
 @media (max-width:900px){
   .masthead__centre{flex-direction:column;gap:10px}
+}
+@media (max-width:680px){
+  /* A floating 264px panel would cover most of a small map — let the
+     legend drop to a normal block below it instead of overlapping. */
+  .board__mapwrap{display:flex;flex-direction:column}
+  .legend-float{
+    position:static;width:100%;max-width:none;
+    max-height:none;margin-top:10px;
+    box-shadow:none;border-top:2px solid var(--rule);
+  }
+  #map{height:clamp(360px,52vh,520px)}
 }
 @media (max-width:640px){
   .masthead{padding:6px 16px}
