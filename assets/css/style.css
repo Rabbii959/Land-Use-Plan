@@ -446,6 +446,7 @@ body{
 .lgroup__n{font:600 11px var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
 
 .lchildren{display:flex;flex-direction:column;padding:0 0 4px 22px}
+.lchildren[hidden]{display:none}
 .lchild__row{
   display:flex;align-items:center;gap:9px;
   padding:5px 7px;border-radius:var(--r);
