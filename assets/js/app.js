@@ -44,6 +44,28 @@ function assignGroupStyles(groups, labels) {
     const hit = HUE_HINTS.find(([re]) => re.test(label));
     GROUP_HUE[g] = hit ? hit[1] : HUE_FALLBACK[fi++ % HUE_FALLBACK.length];
   });
+  // The source data's own "Commercial" LU_Class also holds schools,
+  // hospitals, and institutional buildings — say so wherever the label
+  // appears, rather than only in the methodology note.
+  if (GROUP_LABEL.commercial) {
+    GROUP_LABEL.commercial = 'Commercial (Commercial Including Institutional)';
+  }
+}
+
+/* Fixed legend order, requested explicitly — distinct from the ribbon,
+   which stays sorted by share (its own caption says so). A future
+   district whose groups don't match this exact set falls back to
+   appending anything unrecognised, sorted by area, after this list. */
+const GROUP_ORDER = ['residential', 'commercial', 'industrial', 'agriculture',
+                      'notified_area', 'transportation_network', 'other_uses'];
+
+function orderedGroupTotals() {
+  const all = groupTotals();
+  const byKey = {};
+  all.forEach(d => { byKey[d.g] = d; });
+  const ordered = GROUP_ORDER.filter(g => byKey[g]).map(g => byKey[g]);
+  const extra = all.filter(d => !GROUP_ORDER.includes(d.g));
+  return ordered.concat(extra);
 }
 
 function shade(hex, amt) {
@@ -277,7 +299,7 @@ function paintLayerList() {
   const host = $('#layers');
   host.innerHTML = '';
 
-  groupTotals().forEach(d => {
+  orderedGroupTotals().forEach(d => {
     const g = d.g;
     const classes = (S.stats.groups[g] || [])
       .map(lu => S.stats.classes.find(c => c.lu === lu))
@@ -391,15 +413,16 @@ let map, legend;
 const BASES = {};
 
 function buildMap() {
-  const b = S.stats.bbox;
-  const bounds = L.latLngBounds([b[1], b[0]], [b[3], b[2]]);
+  // Approximate Punjab extent — refined precisely the moment
+  // districts.geojson loads and we have the real combined bounds.
+  const PUNJAB_APPROX = L.latLngBounds([27.7, 69.3], [34.1, 75.4]);
 
   map = L.map('map', {
     preferCanvas : true,
     zoomControl  : true,
     maxZoom      : 18,
-    minZoom      : 8
-  }).fitBounds(bounds, { padding: [16, 16] });
+    minZoom      : 6
+  }).fitBounds(PUNJAB_APPROX, { padding: [16, 16] });
 
   BASES.street = L.tileLayer(
     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -440,56 +463,83 @@ function loadAdminBoundaries() {
     fetch('data/districts.geojson').then(r => r.ok ? r.json() : Promise.reject('absent')),
     fetch('data/local_govts.geojson').then(r => r.ok ? r.json() : Promise.reject('absent'))
   ]).then(([districtsGJ, lgGJ]) => {
-    S.districtIndex = (districtsGJ.features || []).map(f => ({
-      name: (f.properties && f.properties.name) || 'Unnamed',
-      rings: ringsOf(f.geometry)
-    })).filter(d => d.rings.length);
+    // Once fetch+parse succeed, everything below is isolated in its own
+    // try/catch — a problem in z-ordering or a precise refit shouldn't
+    // fall through to the outer .catch() and claim the data is missing
+    // when it plainly isn't.
+    try {
+      S.districtIndex = (districtsGJ.features || []).map(f => ({
+        name: (f.properties && f.properties.name) || 'Unnamed',
+        rings: ringsOf(f.geometry)
+      })).filter(d => d.rings.length);
 
-    S.lgIndex = (lgGJ.features || []).map(f => ({
-      name: (f.properties && f.properties.name) || 'Unnamed',
-      district: (f.properties && f.properties.district) || '',
-      rings: ringsOf(f.geometry)
-    })).filter(d => d.rings.length);
+      S.lgIndex = (lgGJ.features || []).map(f => ({
+        name: (f.properties && f.properties.name) || 'Unnamed',
+        district: (f.properties && f.properties.district) || '',
+        rings: ringsOf(f.geometry)
+      })).filter(d => d.rings.length);
 
-    S.lgByDistrict = {};
-    S.lgIndex.forEach(a => {
-      (S.lgByDistrict[a.district] = S.lgByDistrict[a.district] || []).push(a.name);
-    });
-    Object.values(S.lgByDistrict).forEach(list => list.sort());
+      S.lgByDistrict = {};
+      S.lgIndex.forEach(a => {
+        (S.lgByDistrict[a.district] = S.lgByDistrict[a.district] || []).push(a.name);
+      });
+      Object.values(S.lgByDistrict).forEach(list => list.sort());
 
-    // Outline layers: every district/LG loaded once, styled invisible
-    // except whichever one updateHighlight() currently picks out.
-    S.distLayer = L.geoJSON(districtsGJ, {
-      interactive: false,
-      style: f => districtStyle((f.properties && f.properties.name))
-    }).addTo(map);
-    S.lgLayer = L.geoJSON(lgGJ, {
-      interactive: false,
-      style: f => lgStyle((f.properties && f.properties.name))
-    }).addTo(map);
+      // Outline layers: every district and every LG in Punjab, drawn all
+      // the time — districtStyle()/lgStyle() give the selected one a
+      // bolder treatment, everything else stays at its base style.
+      S.distLayer = L.geoJSON(districtsGJ, {
+        interactive: false,
+        style: f => districtStyle((f.properties && f.properties.name))
+      }).addTo(map);
+      S.lgLayer = L.geoJSON(lgGJ, {
+        interactive: false,
+        style: f => lgStyle((f.properties && f.properties.name))
+      }).addTo(map);
 
-    S.districtBounds = {};
-    S.distLayer.eachLayer(l => { S.districtBounds[l.feature.properties.name] = l.getBounds(); });
-    S.lgBounds = {};
-    S.lgLayer.eachLayer(l => { S.lgBounds[l.feature.properties.name] = l.getBounds(); });
+      S.districtBounds = {};
+      S.distLayer.eachLayer(l => { S.districtBounds[l.feature.properties.name] = l.getBounds(); });
+      S.lgBounds = {};
+      S.lgLayer.eachLayer(l => { S.lgBounds[l.feature.properties.name] = l.getBounds(); });
 
-    const allDistricts = [...new Set(S.districtIndex.map(d => d.name))].sort();
-    fill('#fDistrict', [['all', 'All districts']].concat(
-      allDistricts.map(d => [d, d === S.stats.district ? d : `${d} — boundary only`])));
+      // Explicit stacking regardless of which fetch resolved first:
+      // districts furthest back, LG outlines above them, parcels (added
+      // elsewhere, as each loadLayer() call resolves) stay on top. Purely
+      // cosmetic — wrapped separately so an old Leaflet build without
+      // these methods can't break anything load-bearing above or below.
+      try {
+        S.distLayer.bringToBack();
+        S.lgLayer.bringToFront();
+      } catch (e) { console.error('boundary z-ordering failed', e); }
 
-    populateLocalGovOptions();
-    updateHighlight();
-    syncControls();
+      const allDistricts = [...new Set(S.districtIndex.map(d => d.name))].sort();
+      fill('#fDistrict', [['all', 'All districts']].concat(
+        allDistricts.map(d => [d, d === S.stats.district ? d : `${d} — boundary only`])));
 
-    // Parcel assignment only makes sense for the district that actually
-    // has land-use data loaded.
-    S.lgAreas = S.lgIndex.filter(a => a.district === S.stats.district);
-    if (S.lgAreas.length) {
-      if (S.loaded === S.stats.manifest.length) assignLocalGov();
-      else S.pendingLgAssign = true;
-    } else {
-      note(`No Local Govt boundaries found for ${esc(S.stats.district)} in ` +
-           '<code>data/local_govts.geojson</code>.');
+      populateLocalGovOptions();
+      updateHighlight();
+      syncControls();
+
+      // The initial view was an approximate Punjab bbox; now that we have
+      // the real geometry, refit precisely — unless the user has already
+      // picked a specific district or LG in the brief gap while this loaded.
+      if (S.district === 'all' && S.localGov === 'all') {
+        try { map.fitBounds(S.distLayer.getBounds(), { padding: [16, 16] }); }
+        catch (e) { console.error('initial province refit failed', e); }
+      }
+
+      // Parcel assignment only makes sense for the district that actually
+      // has land-use data loaded.
+      S.lgAreas = S.lgIndex.filter(a => a.district === S.stats.district);
+      if (S.lgAreas.length) {
+        if (S.loaded === S.stats.manifest.length) assignLocalGov();
+        else S.pendingLgAssign = true;
+      } else {
+        note(`No Local Govt boundaries found for ${esc(S.stats.district)} in ` +
+             '<code>data/local_govts.geojson</code>.');
+      }
+    } catch (e) {
+      console.error('processing province boundaries failed', e);
     }
   }).catch(() => note(
     'Province-wide boundaries are not present. Add <code>data/districts.geojson</code> ' +
@@ -497,22 +547,42 @@ function loadAdminBoundaries() {
     'automatically.'));
 }
 
+
+// Every district: black outline, light green fill, always visible.
+// The selected one (if any) gets a heavier stroke to stand out once
+// zoomed in — same colours, just bolder, rather than a totally
+// different treatment that would compete visually with the parcels.
 function districtStyle(name) {
-  return name === S.highlightDistrict
-    ? { fill: false, color: '#b8952a', weight: 2.5, dashArray: '6 4', opacity: 0.85 }
-    : { fill: false, stroke: false, interactive: false };
+  const selected = name === S.highlightDistrict;
+  return {
+    fill: true,
+    fillColor: '#9ed6ab',
+    fillOpacity: selected ? 0.38 : 0.22,
+    color: '#000',
+    weight: selected ? 4 : 2,
+    opacity: 1
+  };
 }
 
+// Every Local Govt unit: light red outline, always visible. The
+// selected one gets a heavier, fully-opaque outline plus a light fill.
 function lgStyle(name) {
-  return name === S.highlightLG
-    ? { fill: false, color: '#2d7a52', weight: 2, dashArray: '3 3', opacity: 0.9 }
-    : { fill: false, stroke: false, interactive: false };
+  const selected = name === S.highlightLG;
+  return {
+    fill: selected,
+    fillColor: '#e0736a',
+    fillOpacity: selected ? 0.22 : 0,
+    color: '#e0736a',
+    weight: selected ? 3.5 : 1.4,
+    opacity: selected ? 1 : 0.7
+  };
 }
 
-// Which outline(s) are drawn — the effective district always shows;
-// a specific Local Govt shows on top of it when one is picked.
+// Which outline is bolded — null when 'all' is selected, since every
+// district/LG is already shown equally at that point; picking one
+// specific district or LG is what earns it the heavier treatment.
 function updateHighlight() {
-  S.highlightDistrict = S.district !== 'all' ? S.district : S.stats.district;
+  S.highlightDistrict = S.district !== 'all' ? S.district : null;
   S.highlightLG = S.localGov !== 'all' ? S.localGov : null;
   if (S.distLayer) S.distLayer.setStyle(f => districtStyle(f.properties.name));
   if (S.lgLayer) S.lgLayer.setStyle(f => lgStyle(f.properties.name));
@@ -534,13 +604,14 @@ function populateLocalGovOptions() {
 }
 
 function zoomToDistrict(name) {
-  const target = name === 'all' ? S.stats.district : name;
-  const b = S.districtBounds && S.districtBounds[target];
-  if (b) { map.fitBounds(b, { padding: [24, 24] }); return; }
   if (name === 'all') {
+    if (S.distLayer) { map.fitBounds(S.distLayer.getBounds(), { padding: [16, 16] }); return; }
     const bb = S.stats.bbox;
     map.fitBounds(L.latLngBounds([bb[1], bb[0]], [bb[3], bb[2]]), { padding: [16, 16] });
+    return;
   }
+  const b = S.districtBounds && S.districtBounds[name];
+  if (b) map.fitBounds(b, { padding: [24, 24] });
 }
 
 function zoomToLocalGov(name) {
@@ -604,19 +675,50 @@ function loadLayer(group, file) {
     });
 }
 
-function visible(p) {
+// Every filter except Local Govt — used by styleFor() to decide whether
+// a parcel is drawn at all. A Local Govt mismatch alone doesn't hide a
+// parcel, it dims it (see styleFor), so it's deliberately left out here.
+function visibleIgnoringLG(p) {
   if (S.offClasses.has(p.lu))               return false;
   if (S.cat !== 'all' && p.ct !== S.cat)    return false;
   if (S.luPick && p.lu !== S.luPick)        return false;
   if (S.district !== 'all' && (p.d || S.stats.district) !== S.district) return false;
+  return true;
+}
+
+// Full visibility, including Local Govt — this is "is this parcel part
+// of the current selection" for stats, clicks, and the CSV/table, where
+// a dimmed-but-drawn parcel outside the chosen LG should still count as
+// excluded.
+function visible(p) {
+  if (!visibleIgnoringLG(p)) return false;
   if (S.localGov !== 'all' && p.lg !== S.localGov) return false;
   return true;
 }
 
+// "Transparent to 60%" read as 60% see-through — 40% opacity retained.
+// Named so the number is a one-line tweak if a different reading was meant.
+const LG_DIM_OPACITY = 0.4;
+
 function styleFor(f) {
   const p = f.properties;
-  if (!visible(p)) return { stroke: false, fill: false, interactive: false };
+  if (!visibleIgnoringLG(p)) return { stroke: false, fill: false, interactive: false };
+
   const c = S.colour[p.lu] || '#9aa79f';
+  const dimmed = S.localGov !== 'all' && p.lg !== S.localGov;
+
+  if (dimmed) {
+    return {
+      fill        : true,
+      fillColor   : c,
+      fillOpacity : LG_DIM_OPACITY,
+      stroke      : true,
+      color       : shade(c, -0.42),
+      weight      : 0.3,
+      opacity     : LG_DIM_OPACITY,
+      interactive : false
+    };
+  }
   return {
     fill        : true,
     fillColor   : c,
@@ -653,7 +755,7 @@ function countUp() {
 function paintLegend() {
   const el = document.querySelector('.leg');
   if (!el) return;
-  const rows = groupTotals()
+  const rows = orderedGroupTotals()
     .filter(d => (S.stats.groups[d.g] || []).some(lu => !S.offClasses.has(lu)))
     .map(d => `<div class="leg__r"><i class="leg__sw" style="background:${GROUP_HUE[d.g]}"></i>` +
               `${GROUP_LABEL[d.g] || d.g}</div>`).join('');
@@ -1327,8 +1429,7 @@ function resetAll() {
   updateDataAvailabilityNote();
   afterFilter();
   paintTable();
-  const b = S.stats.bbox;
-  map.fitBounds(L.latLngBounds([b[1], b[0]], [b[3], b[2]]), { padding: [16, 16] });
+  zoomToDistrict('all');
 }
 
 })();
