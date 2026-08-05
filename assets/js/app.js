@@ -115,6 +115,7 @@ const $  = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 const nf = (v, d = 0) => v.toLocaleString('en-US',
   { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtAc = acres => nf(acres, acres < 10 ? 2 : acres < 100 ? 1 : 0) + ' ac';
 
 /* ═══════════════════════════════════════════ boot */
 fetch('data/stats.json')
@@ -280,8 +281,10 @@ function readRibbon() {
    some but not all of its classes are on. */
 const GROUP_BOX = {};   // group key -> its checkbox element
 const GROUP_ROW = {};   // group key -> its row label element
+const GROUP_N_EL = {};  // group key -> its number span (updated to filtered acres)
 const CLASS_BOX = {};   // land use class -> its checkbox element
 const CLASS_ROW = {};   // land use class -> its row label element
+const CLASS_N_EL = {};  // land use class -> its number span (updated to filtered acres)
 
 const CHEV_SVG =
   '<svg viewBox="0 0 8 8" width="8" height="8" aria-hidden="true">' +
@@ -321,7 +324,7 @@ function paintLayerList() {
       '<input type="checkbox" class="lgroup__box" checked>' +
       `<i class="lgroup__sw" style="background:${GROUP_HUE[g] || '#9aa79f'}"></i>` +
       `<span class="lgroup__nm">${esc(GROUP_LABEL[g] || g)}</span>` +
-      `<span class="lgroup__n">${nf(d.count)}</span>`;
+      `<span class="lgroup__n">${fmtAc(d.acres)}</span>`;
 
     head.append(chev, lab);
     wrap.appendChild(head);
@@ -338,7 +341,7 @@ function paintLayerList() {
         '<input type="checkbox" class="lchild__box" checked>' +
         `<i class="lchild__sw" style="background:${S.colour[c.lu]}"></i>` +
         `<span class="lchild__nm">${esc(c.lu)}</span>` +
-        `<span class="lchild__n">${nf(c.count)}</span>`;
+        `<span class="lchild__n">${fmtAc(c.acres)}</span>`;
       const box = row.querySelector('input');
       box.addEventListener('change', () => {
         box.checked ? S.offClasses.delete(c.lu) : S.offClasses.add(c.lu);
@@ -348,6 +351,7 @@ function paintLayerList() {
       });
       CLASS_BOX[c.lu] = box;
       CLASS_ROW[c.lu] = row;
+      CLASS_N_EL[c.lu] = row.querySelector('.lchild__n');
       kids.appendChild(row);
     });
 
@@ -357,6 +361,7 @@ function paintLayerList() {
     const groupBox = lab.querySelector('input');
     GROUP_BOX[g] = groupBox;
     GROUP_ROW[g] = lab;
+    GROUP_N_EL[g] = lab.querySelector('.lgroup__n');
     groupBox.addEventListener('change', () => {
       const on = groupBox.checked;
       classes.forEach(c => {
@@ -412,7 +417,7 @@ function buildMap() {
 
   map = L.map('map', {
     preferCanvas : true,
-    zoomControl  : true,
+    zoomControl  : false,   // re-added below, moved to bottom-right
     maxZoom      : 18,
     minZoom      : 6
   }).fitBounds(PUNJAB_APPROX, { padding: [16, 16] });
@@ -431,14 +436,23 @@ function buildMap() {
 
   BASES.street.addTo(map);
 
-  legend = L.control({ position: 'bottomright' });
-  legend.onAdd = function () {
-    const d = L.DomUtil.create('div', 'leg');
+  // Bottom-right stack: base-map switcher, then zoom, then scale — added
+  // in this order so they stack in this order (Leaflet stacks controls
+  // within one corner in the order they're added).
+  const baseSwitch = L.control({ position: 'bottomright' });
+  baseSwitch.onAdd = function () {
+    const d = L.DomUtil.create('div', 'seg seg--map');
     L.DomEvent.disableClickPropagation(d);
+    d.innerHTML =
+      '<button class="seg__b is-on" data-base="street">Street</button>' +
+      '<button class="seg__b" data-base="satellite">Satellite</button>' +
+      '<button class="seg__b" data-base="plain">Plain</button>';
     return d;
   };
-  legend.addTo(map);
-  paintLegend();
+  baseSwitch.addTo(map);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  L.control.scale({ position: 'bottomright', imperial: false, maxWidth: 140 }).addTo(map);
 
   loadAdminBoundaries();
   S.stats.manifest.forEach(m => loadLayer(m.group, m.file));
@@ -507,7 +521,7 @@ function loadAdminBoundaries() {
 
       const allDistricts = [...new Set(S.districtIndex.map(d => d.name))].sort();
       fill('#fDistrict', [['all', 'All districts']].concat(
-        allDistricts.map(d => [d, d === S.stats.district ? d : `${d} — boundary only`])));
+        allDistricts.map(d => [d, d])));
 
       populateLocalGovOptions();
       updateHighlight();
@@ -616,17 +630,11 @@ function zoomToLocalGov(name) {
   if (b) map.fitBounds(b, { padding: [24, 24] });
 }
 
-// A district other than the one with real parcel data is a legitimate
-// thing to explore (its boundary is real), but the map has no parcels
-// to show there — say so rather than leaving an unexplained empty map.
+// A district other than the one with parcel data legitimately shows an
+// empty map (its boundary is still real and correctly drawn) — no
+// separate note is shown for this any more, on request.
 function updateDataAvailabilityNote() {
-  const effective = S.district === 'all' ? S.stats.district : S.district;
-  if (effective !== S.stats.district) {
-    note(`No land use parcels are available for <strong>${esc(effective)}</strong> yet — ` +
-         `showing its boundary only. Parcel data currently covers ${esc(S.stats.district)}.`);
-  } else {
-    note('');
-  }
+  note('');
 }
 
 function loadLayer(group, file) {
@@ -751,17 +759,6 @@ function countUp() {
     : `Loading parcels… ${S.loaded}/${S.stats.manifest.length} layers`;
 }
 
-function paintLegend() {
-  const el = document.querySelector('.leg');
-  if (!el) return;
-  const rows = orderedGroupTotals()
-    .filter(d => (S.stats.groups[d.g] || []).some(lu => !S.offClasses.has(lu)))
-    .map(d => `<div class="leg__r"><i class="leg__sw" style="background:${GROUP_HUE[d.g]}"></i>` +
-              `${GROUP_LABEL[d.g] || d.g}</div>`).join('');
-  el.innerHTML = '<h4>Layers shown</h4>' +
-    (rows || '<div class="leg__r">No layers selected</div>');
-}
-
 /* ═══════════════════════════════════════════ filtering */
 // Ribbon segments call this to isolate one class-group, toggling
 // every one of its land uses on and every other group's off.
@@ -816,7 +813,7 @@ function afterFilter() {
   if (raf) cancelAnimationFrame(raf);
   raf = requestAnimationFrame(() => {
     Object.values(S.layers).forEach(l => l.setStyle(styleFor));
-    paintLegend();
+    refreshBigNumbers();
     readRibbon();
     refreshStats();
     updateLGSplitOverlay();
@@ -887,17 +884,40 @@ function updateLGSplitOverlay() {
 }
 
 function refreshStats() {
-  setText('#selWhat', currentSelectionLabel());
-  const sel = S.props.filter(visible);
-  if (!sel.length) {
-    ['#selCount', '#selArea', '#selShare'].forEach(s => setText(s, '—'));
-    if (S.props.length) setText('#selCount', '0');
-    return;
-  }
-  const acres = sel.reduce((s, p) => s + p.a, 0);
-  setText('#selCount', nf(sel.length));
-  setText('#selArea',  nf(acres) + ' ac');
-  setText('#selShare', nf(100 * acres / S.stats.totals.acres, 2) + '%');
+  refreshLegendAcres();
+  refreshBigNumbers();
+}
+
+// Area per land-use class under the current District/Local Govt/Category
+// filters — deliberately NOT narrowed by luPick or offClasses, since this
+// answers "what does everything look like under my geographic/category
+// filter" (the legend numbers, the big-numbers list), not "what's
+// currently drawn on the map".
+function computeFilteredClassTotals() {
+  const totals = {};
+  S.props.forEach(p => {
+    if (S.district !== 'all' && (p.d || S.stats.district) !== S.district) return;
+    if (S.localGov !== 'all' && p.lg !== S.localGov) return;
+    if (S.cat !== 'all' && p.ct !== S.cat) return;
+    totals[p.lu] = (totals[p.lu] || 0) + p.a;
+  });
+  return totals;
+}
+
+// Updates the acreage shown next to every class/group in the legend
+// tree in place — no rebuild, so expand/collapse state and checkbox
+// listeners are untouched.
+function refreshLegendAcres() {
+  const totals = computeFilteredClassTotals();
+  Object.keys(S.stats.groups).forEach(g => {
+    let groupSum = 0;
+    (S.stats.groups[g] || []).forEach(lu => {
+      const acres = totals[lu] || 0;
+      groupSum += acres;
+      if (CLASS_N_EL[lu]) CLASS_N_EL[lu].textContent = fmtAc(acres);
+    });
+    if (GROUP_N_EL[g]) GROUP_N_EL[g].textContent = fmtAc(groupSum);
+  });
 }
 
 // What is the user currently looking at? Named class > a solo'd group >
@@ -912,6 +932,79 @@ function currentSelectionLabel() {
   if (S.district !== 'all') return S.district;
   if (S.cat !== 'all') return S.cat + ' only';
   return 'Whole district';
+}
+
+// The right-hand panel: one big figure for whatever's specifically
+// picked (a class, or a solo'd group), or — when nothing narrows the
+// view — every land use's area under the current district/LG/category
+// filter, largest first.
+function refreshBigNumbers() {
+  const host = $('#bigNumbers');
+  if (!host) return;
+
+  const totals = computeFilteredClassTotals();
+  const viewTotal = Object.values(totals).reduce((s, a) => s + a, 0);
+
+  if (S.luPick) {
+    const acres = totals[S.luPick] || 0;
+    const pct = viewTotal ? 100 * acres / viewTotal : 0;
+    host.innerHTML =
+      `<p class="bn__label">Selected land use</p>` +
+      `<h3 class="bn__title">${esc(S.luPick)}</h3>` +
+      `<div class="bn__figure">` +
+        `<span class="bn__n">${nf(acres, acres < 100 ? 1 : 0)}</span><span class="bn__u">acres</span>` +
+        `<div class="bn__pct">${nf(pct, 1)}% of this view</div>` +
+      `</div>`;
+    return;
+  }
+
+  const activeGroups = orderedGroupTotals().filter(d =>
+    (S.stats.groups[d.g] || []).some(lu => !S.offClasses.has(lu)));
+
+  if (activeGroups.length === 1) {
+    const g = activeGroups[0].g;
+    const members = (S.stats.groups[g] || [])
+      .map(lu => ({ lu, acres: totals[lu] || 0 }))
+      .sort((a, b) => b.acres - a.acres);
+    const groupAcres = members.reduce((s, m) => s + m.acres, 0);
+    const pct = viewTotal ? 100 * groupAcres / viewTotal : 0;
+    host.innerHTML =
+      `<p class="bn__label">Selected group</p>` +
+      `<h3 class="bn__title">${esc(GROUP_LABEL[g] || g)}</h3>` +
+      `<div class="bn__figure">` +
+        `<span class="bn__n">${nf(groupAcres, groupAcres < 100 ? 1 : 0)}</span><span class="bn__u">acres</span>` +
+        `<div class="bn__pct">${nf(pct, 1)}% of this view</div>` +
+      `</div>` +
+      `<p class="bn__label">By land use</p>` +
+      `<div class="bn__list">` + members.map(bnRow).join('') + `</div>`;
+    wireBigNumberRows(host);
+    return;
+  }
+
+  const all = Object.keys(totals)
+    .map(lu => ({ lu, acres: totals[lu] }))
+    .filter(d => d.acres > 0)
+    .sort((a, b) => b.acres - a.acres);
+  host.innerHTML =
+    `<p class="bn__label">${esc(currentSelectionLabel())}</p>` +
+    `<div class="bn__figure">` +
+      `<span class="bn__n">${nf(viewTotal, 0)}</span><span class="bn__u">acres total</span>` +
+    `</div>` +
+    `<p class="bn__label">By land use, largest first</p>` +
+    `<div class="bn__list">` + all.map(bnRow).join('') + `</div>`;
+  wireBigNumberRows(host);
+}
+
+function bnRow(d) {
+  return `<div class="bn__row" data-lu="${esc(d.lu)}">` +
+    `<i class="bn__sw" style="background:${S.colour[d.lu] || '#9aa79f'}"></i>` +
+    `<span class="bn__nm">${esc(d.lu)}</span>` +
+    `<span class="bn__ac">${fmtAc(d.acres)}</span></div>`;
+}
+
+function wireBigNumberRows(host) {
+  host.querySelectorAll('.bn__row').forEach(row =>
+    row.addEventListener('click', () => pickClass(row.dataset.lu)));
 }
 
 /* ═══════════════════════════════════════════ filters */
