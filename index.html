@@ -36,42 +36,72 @@
   <section class="filters" aria-label="Filter the plan">
     <div class="filters__row">
       <div class="fld">
-        <input type="checkbox" class="fld__vis" id="visDistrict" checked
-               title="Show district boundaries on the map" aria-label="Show district boundaries on the map">
-        <label class="fld__l" for="fDistrict">District</label>
-        <select class="sel" id="fDistrict"></select>
+        <div class="fld__top">
+          <input type="checkbox" class="fld__vis" id="visDistrict" checked
+                 title="Show district boundaries on the map" aria-label="Show district boundaries on the map">
+          <label class="fld__l" for="fDistrict">District</label>
+          <select class="sel" id="fDistrict"></select>
+        </div>
+        <div class="fld__opac">
+          <input type="range" class="fld__range" id="opDistrict" min="0" max="100" value="100"
+                 aria-label="District boundary transparency">
+          <span class="fld__opacn" id="opDistrictN">100%</span>
+        </div>
       </div>
       <div class="fld fld--disabled">
-        <input type="checkbox" class="fld__vis" id="visLG"
-               title="Show Local Govt boundaries on the map" aria-label="Show Local Govt boundaries on the map">
-        <label class="fld__l" for="fLocal">Local Govt</label>
-        <select class="sel" id="fLocal" disabled></select>
+        <div class="fld__top">
+          <input type="checkbox" class="fld__vis" id="visLG"
+                 title="Show Local Govt boundaries on the map" aria-label="Show Local Govt boundaries on the map">
+          <label class="fld__l" for="fLocal">Local Govt</label>
+          <select class="sel" id="fLocal" disabled></select>
+        </div>
+        <div class="fld__opac">
+          <input type="range" class="fld__range" id="opLG" min="0" max="100" value="100"
+                 aria-label="Local Govt boundary transparency">
+          <span class="fld__opacn" id="opLGN">100%</span>
+        </div>
       </div>
       <div class="fld">
-        <input type="checkbox" class="fld__vis" id="visLanduse"
-               title="Show land use parcels on the map" aria-label="Show land use parcels on the map">
-        <label class="fld__l" for="fLanduse">Land Use</label>
-        <select class="sel" id="fLanduse"></select>
+        <div class="fld__top">
+          <input type="checkbox" class="fld__vis" id="visLanduse"
+                 title="Show land use parcels on the map" aria-label="Show land use parcels on the map">
+          <label class="fld__l" for="fLanduse">Land Use</label>
+          <select class="sel" id="fLanduse"></select>
+        </div>
+        <div class="fld__opac">
+          <input type="range" class="fld__range" id="opLanduse" min="0" max="100" value="100"
+                 aria-label="Land use parcel transparency">
+          <span class="fld__opacn" id="opLanduseN">100%</span>
+        </div>
       </div>
       <div class="fld">
-        <input type="checkbox" class="fld__vis" id="visCategory"
-               title="Outline proposed parcels on the map" aria-label="Outline proposed parcels on the map">
-        <label class="fld__l" for="fCategory">Category</label>
-        <select class="sel" id="fCategory">
-          <option value="all">All</option>
-          <option value="Existing">Existing</option>
-          <option value="Proposed">Proposed</option>
-        </select>
+        <div class="fld__top">
+          <input type="checkbox" class="fld__vis" id="visCategory"
+                 title="Outline proposed parcels on the map" aria-label="Outline proposed parcels on the map">
+          <label class="fld__l" for="fCategory">Category</label>
+          <select class="sel" id="fCategory">
+            <option value="all">All</option>
+            <option value="Existing">Existing</option>
+            <option value="Proposed">Proposed</option>
+          </select>
+        </div>
+        <div class="fld__opac">
+          <input type="range" class="fld__range" id="opCategory" min="0" max="100" value="100"
+                 aria-label="Proposed-parcel outline transparency">
+          <span class="fld__opacn" id="opCategoryN">100%</span>
+        </div>
       </div>
 
       <div class="fld fld--grow fld--search">
-        <label class="fld__l" for="fSearch">Search</label>
-        <div class="ac">
-          <input class="sel sel--inp" id="fSearch" type="search" autocomplete="off"
-                 role="combobox" aria-expanded="false" aria-autocomplete="list"
-                 aria-controls="fSuggest" aria-label="Search land use classes"
-                 placeholder="Try “gravyard”, “health”, “educ”…">
-          <ul class="ac__list" id="fSuggest" role="listbox" aria-label="Search results" hidden></ul>
+        <div class="fld__top">
+          <label class="fld__l" for="fSearch">Search</label>
+          <div class="ac">
+            <input class="sel sel--inp" id="fSearch" type="search" autocomplete="off"
+                   role="combobox" aria-expanded="false" aria-autocomplete="list"
+                   aria-controls="fSuggest" aria-label="Search land use classes"
+                   placeholder="Try “gravyard”, “health”, “educ”…">
+            <ul class="ac__list" id="fSuggest" role="listbox" aria-label="Search results" hidden></ul>
+          </div>
         </div>
       </div>
 
