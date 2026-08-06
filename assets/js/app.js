@@ -97,6 +97,7 @@ const S = {
   highlightDistrict: null, // which district outline is currently drawn
   highlightLG      : null, // which LG outline is currently drawn, if any
   patternLayer     : null, // SVG layer holding parcels whose class uses a real hatch texture
+  opDistrict : 1, opLG : 1, opLanduse : 1, opCategory : 1,  // transparency sliders, 0–1
   showDistrict : true,   // District boundary layer visibility (checkbox)
   showLG       : false,  // Local Govt boundary layer visibility (checkbox)
   showLanduse  : false,  // land use parcels visibility (checkbox) — master switch
@@ -746,7 +747,7 @@ function districtStyle(name) {
     fill: false,
     color: selected ? '#ffd400' : '#FFA7A9',
     weight: selected ? 4 : 2,
-    opacity: 1
+    opacity: S.opDistrict
   };
 }
 
@@ -761,7 +762,7 @@ function lgStyle(name) {
     fill: false,
     color: selected ? '#ff0000' : '#000000',
     weight: selected ? 3.5 : 1.4,
-    opacity: selected ? 1 : 0.75
+    opacity: (selected ? 1 : 0.75) * S.opLG
   };
 }
 
@@ -868,6 +869,13 @@ function loadLayer(group, file) {
           populateLanduseOptions();
           buildPatternLayer();
           if (S.pendingLgAssign) { S.pendingLgAssign = false; assignLocalGov(); }
+          // The boundary layers were brought to front back when they first
+          // loaded, but parcel layers (and the pattern layer) finish later
+          // and get added on top of them — re-assert the order now that
+          // everything actually exists, or the LG/district lines end up
+          // invisible under the parcel fill wherever they overlap.
+          if (S.distLayer) S.distLayer.bringToFront();
+          if (S.lgLayer) S.lgLayer.bringToFront();
         } catch (e) {
           console.error('post-load finalisation failed', e);
         }
@@ -918,11 +926,11 @@ function styleFor(f) {
     return {
       fill        : true,
       fillColor   : c,
-      fillOpacity : LG_DIM_OPACITY,
+      fillOpacity : LG_DIM_OPACITY * S.opLanduse,
       stroke      : true,
       color       : shade(c, -0.42),
       weight      : 0.3,
-      opacity     : LG_DIM_OPACITY,
+      opacity     : LG_DIM_OPACITY * S.opLanduse,
       interactive : false
     };
   }
@@ -930,12 +938,12 @@ function styleFor(f) {
   return {
     fill        : true,
     fillColor   : c,
-    fillOpacity : S.luPick ? 0.88 : 0.72,
+    fillOpacity : (S.luPick ? 0.88 : 0.72) * S.opLanduse,
     stroke      : true,
     color       : proposedMark ? '#8a1f14' : shade(c, -0.42),
     weight      : proposedMark ? 1.6 : (S.luPick ? 0.9 : 0.45),
     dashArray   : proposedMark ? '3 2' : null,
-    opacity     : 0.9,
+    opacity     : (proposedMark ? S.opCategory : 0.9) * S.opLanduse,
     interactive : true
   };
 }
@@ -1037,12 +1045,12 @@ function patternStyleFor(f) {
   return {
     fill        : true,
     fillColor   : spec ? `url(#${spec._id})` : ink,
-    fillOpacity : dimmed ? LG_DIM_OPACITY : (S.luPick ? 0.95 : 0.85),
+    fillOpacity : (dimmed ? LG_DIM_OPACITY : (S.luPick ? 0.95 : 0.85)) * S.opLanduse,
     stroke      : true,
     color       : dimmed ? shade(ink, -0.3) : (proposedMark ? '#8a1f14' : shade(ink, -0.3)),
     weight      : dimmed ? 0.3 : (proposedMark ? 1.6 : (S.luPick ? 0.9 : 0.45)),
     dashArray   : (!dimmed && proposedMark) ? '3 2' : null,
-    opacity     : dimmed ? LG_DIM_OPACITY : 0.9,
+    opacity     : (dimmed ? LG_DIM_OPACITY : (proposedMark ? S.opCategory : 0.9)) * S.opLanduse,
     interactive : !dimmed
   };
 }
@@ -1887,6 +1895,22 @@ function wire() {
     S.showCategory = e.target.checked;
     afterFilter();
   });
+
+  /* ── transparency sliders: District/LG/Land Use/Category ── */
+  const wireOpacity = (id, readoutId, setter, restyle) => {
+    on('#' + id, 'input', e => {
+      const v = Number(e.target.value) / 100;
+      setter(v);
+      setText('#' + readoutId, e.target.value + '%');
+      restyle();
+    });
+  };
+  wireOpacity('opDistrict', 'opDistrictN', v => { S.opDistrict = v; },
+    () => { if (S.distLayer) S.distLayer.setStyle(f => districtStyle(f.properties.name)); });
+  wireOpacity('opLG', 'opLGN', v => { S.opLG = v; },
+    () => { if (S.lgLayer) S.lgLayer.setStyle(f => lgStyle(f.properties.name)); });
+  wireOpacity('opLanduse', 'opLanduseN', v => { S.opLanduse = v; }, afterFilter);
+  wireOpacity('opCategory', 'opCategoryN', v => { S.opCategory = v; }, afterFilter);
 }
 
 function resetAll() {
@@ -1902,6 +1926,11 @@ function resetAll() {
   S.showCategory = false;
   const visMap = { visDistrict: true, visLG: false, visLanduse: false, visCategory: false };
   Object.keys(visMap).forEach(id => { const el = $('#' + id); if (el) el.checked = visMap[id]; });
+  S.opDistrict = S.opLG = S.opLanduse = S.opCategory = 1;
+  ['opDistrict', 'opLG', 'opLanduse', 'opCategory'].forEach(id => {
+    const el = $('#' + id); if (el) el.value = 100;
+    setText('#' + id + 'N', '100%');
+  });
   const tblSearchEl = $('#tblSearch'); if (tblSearchEl) tblSearchEl.value = '';
   const fSearchEl = $('#fSearch');     if (fSearchEl) fSearchEl.value = '';
   hideSugg();
