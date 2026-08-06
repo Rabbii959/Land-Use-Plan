@@ -85,8 +85,8 @@ const S = {
   layers    : {},          // group -> L.geoJSON
   props     : [],          // every feature's properties, for live stats
   offClasses: new Set(),   // individual land use classes toggled off in the legend
-  district  : 'all',
-  localGov  : 'all',
+  districts : new Set(),   // empty = 'all districts' (no restriction) — multi-select
+  localGovs : new Set(),   // empty = 'all local governments' — multi-select
   lgAreas   : null,        // local government boundaries, for the district with parcel data
   pendingLgAssign: false,  // true if boundaries arrived before all parcel layers did
   districtIndex   : [],    // [{name, rings}] every district in the province
@@ -94,8 +94,8 @@ const S = {
   lgByDistrict    : {},    // district name -> [lg names], for cascading the select
   districtBounds  : {},    // district name -> Leaflet LatLngBounds
   lgBounds        : {},    // lg name -> Leaflet LatLngBounds
-  highlightDistrict: null, // which district outline is currently drawn
-  highlightLG      : null, // which LG outline is currently drawn, if any
+  highlightDistricts: new Set(), // which district outlines are currently bolded
+  highlightLGs      : new Set(), // which LG outlines are currently bolded
   patternLayer     : null, // SVG layer holding parcels whose class uses a real hatch texture
   opDistrict : 1, opLG : 1, opLanduse : 1, opCategory : 1,  // transparency sliders, 0–1
   showDistrict : true,   // District boundary layer visibility (checkbox)
@@ -103,7 +103,7 @@ const S = {
   showLanduse  : false,  // land use parcels visibility (checkbox) — master switch
   showCategory : false,  // dashed outline on Proposed parcels (checkbox)
   cat       : 'all',
-  luPick    : null,
+  luPicks   : new Set(),   // empty = 'all land uses' — multi-select
   index     : [],          // search index
   sugg      : [],
   suggAt    : -1,
@@ -433,8 +433,8 @@ function readRibbon() {
   add(`<b>${nf(cnt)}</b> parcels`);
 
   read.insertBefore(frag, reset);
-  reset.hidden = (S.offClasses.size === 0 && !S.luPick && S.cat === 'all' &&
-                  S.district === 'all' && S.localGov === 'all');
+  reset.hidden = (S.offClasses.size === 0 && !S.luPicks.size && S.cat === 'all' &&
+                  !S.districts.size && !S.localGovs.size);
 
   $$('.ribbon__bar').forEach(bar => {
     const solo = anyOnGroups.length === 1;
@@ -702,7 +702,7 @@ function loadAdminBoundaries() {
       // The initial view was an approximate Punjab bbox; now that we have
       // the real geometry, refit precisely — unless the user has already
       // picked a specific district or LG in the brief gap while this loaded.
-      if (S.district === 'all' && S.localGov === 'all') {
+      if (!S.districts.size && !S.localGovs.size) {
         try { map.fitBounds(S.distLayer.getBounds(), { padding: [16, 16] }); }
         catch (e) { console.error('initial province refit failed', e); }
       }
@@ -742,7 +742,7 @@ function loadAdminBoundaries() {
 // different treatment that would compete visually with the parcels.
 function districtStyle(name) {
   if (!S.showDistrict) return { fill: false, stroke: false };
-  const selected = name === S.highlightDistrict;
+  const selected = S.highlightDistricts.has(name);
   return {
     fill: false,
     color: selected ? '#ffd400' : '#FFA7A9',
@@ -757,33 +757,34 @@ function districtStyle(name) {
 // flag if a literal dark-red default was meant instead.)
 function lgStyle(name) {
   if (!S.showLG) return { fill: false, stroke: false };
-  const selected = name === S.highlightLG;
+  const selected = S.highlightLGs.has(name);
   return {
     fill: false,
     color: selected ? '#ff0000' : '#000000',
     weight: selected ? 3.5 : 1.4,
-    opacity: (selected ? 1 : 0.75) * S.opLG
+    opacity: selected ? 1 : S.opLG
   };
 }
 
-// Which outline is bolded — null when 'all' is selected, since every
-// district/LG is already shown equally at that point; picking one
-// specific district or LG is what earns it the heavier treatment.
+// Which outlines are bolded — empty when 'all' is selected, since every
+// district/LG is already shown equally at that point; picking one or
+// more specific districts/LGs is what earns them the heavier treatment.
 function updateHighlight() {
-  S.highlightDistrict = S.district !== 'all' ? S.district : null;
-  S.highlightLG = S.localGov !== 'all' ? S.localGov : null;
+  S.highlightDistricts = new Set(S.districts);
+  S.highlightLGs = new Set(S.localGovs);
   if (S.distLayer) S.distLayer.setStyle(f => districtStyle(f.properties.name));
   if (S.lgLayer) S.lgLayer.setStyle(f => lgStyle(f.properties.name));
 }
 
-// Local Govt options cascade to whichever district is in effect — 'all'
-// falls back to showing the district that actually has parcel data,
-// rather than all 237 units across the province at once.
+// Local Govt options cascade to whichever district(s) are selected —
+// empty selection falls back to showing the district that actually has
+// parcel data, rather than all 237 units across the province at once.
+// With multiple districts selected, shows the union of their LGs.
 function populateLocalGovOptions() {
   const el = $('#fLocal');
   if (!el) return;
-  const effective = S.district === 'all' ? S.stats.district : S.district;
-  const names = (S.lgByDistrict[effective] || []).slice();
+  const effective = S.districts.size ? [...S.districts] : [S.stats.district];
+  const names = [...new Set(effective.flatMap(d => S.lgByDistrict[d] || []))].sort();
   fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
   el.disabled = false;
   el.removeAttribute('title');
@@ -806,28 +807,31 @@ function populateLanduseOptions() {
     .sort((a, b) => a.lu.localeCompare(b.lu));
   fill('#fLanduse', [['all', 'All land uses']].concat(
     available.map(c => [c.lu, `${c.lu} (${totals[c.lu].count})`])));
-  if (S.luPick && !totals[S.luPick]) {
-    setClassPick(null);
-  } else {
-    el.value = S.luPick || 'all';
-  }
+  // drop any picks that no longer exist in this scope, rather than
+  // clearing the whole multi-selection over one invalidated entry
+  [...S.luPicks].forEach(lu => { if (!totals[lu]) S.luPicks.delete(lu); });
+  setMultiSelected('#fLanduse', S.luPicks);
 }
 
-function zoomToDistrict(name) {
-  if (name === 'all') {
+function zoomToDistricts(names) {
+  const list = names && names.size ? [...names] : null;
+  if (!list) {
     if (S.distLayer) { map.fitBounds(S.distLayer.getBounds(), { padding: [16, 16] }); return; }
     const bb = S.stats.bbox;
     map.fitBounds(L.latLngBounds([bb[1], bb[0]], [bb[3], bb[2]]), { padding: [16, 16] });
     return;
   }
-  const b = S.districtBounds && S.districtBounds[name];
-  if (b) map.fitBounds(b, { padding: [24, 24] });
+  const combined = L.latLngBounds([]);
+  list.forEach(name => { const b = S.districtBounds && S.districtBounds[name]; if (b) combined.extend(b); });
+  if (combined.isValid()) map.fitBounds(combined, { padding: [24, 24] });
 }
 
-function zoomToLocalGov(name) {
-  if (name === 'all') return zoomToDistrict(S.district);
-  const b = S.lgBounds && S.lgBounds[name];
-  if (b) map.fitBounds(b, { padding: [24, 24] });
+function zoomToLocalGovs(names) {
+  const list = names && names.size ? [...names] : null;
+  if (!list) return zoomToDistricts(S.districts);
+  const combined = L.latLngBounds([]);
+  list.forEach(name => { const b = S.lgBounds && S.lgBounds[name]; if (b) combined.extend(b); });
+  if (combined.isValid()) map.fitBounds(combined, { padding: [24, 24] });
 }
 
 // A district other than the one with parcel data legitimately shows an
@@ -895,8 +899,8 @@ function visibleIgnoringLG(p) {
   if (!S.showLanduse)                        return false;
   if (S.offClasses.has(p.lu))               return false;
   if (S.cat !== 'all' && p.ct !== S.cat)    return false;
-  if (S.luPick && p.lu !== S.luPick)        return false;
-  if (S.district !== 'all' && (p.d || S.stats.district) !== S.district) return false;
+  if (S.luPicks.size && !S.luPicks.has(p.lu))            return false;
+  if (S.districts.size && !S.districts.has(p.d || S.stats.district)) return false;
   return true;
 }
 
@@ -906,7 +910,7 @@ function visibleIgnoringLG(p) {
 // excluded.
 function visible(p) {
   if (!visibleIgnoringLG(p)) return false;
-  if (S.localGov !== 'all' && p.lg !== S.localGov) return false;
+  if (S.localGovs.size && !S.localGovs.has(p.lg)) return false;
   return true;
 }
 
@@ -920,7 +924,7 @@ function styleFor(f) {
   if (LU_PATTERN[p.lu]) return { stroke: false, fill: false, interactive: false };  // drawn on the pattern layer instead
 
   const c = S.colour[p.lu] || '#9aa79f';
-  const dimmed = S.localGov !== 'all' && p.lg !== S.localGov;
+  const dimmed = S.localGovs.size && !S.localGovs.has(p.lg);
 
   if (dimmed) {
     return {
@@ -935,15 +939,17 @@ function styleFor(f) {
     };
   }
   const proposedMark = S.showCategory && p.ct === 'Proposed';
+  // The slider IS the opacity now — 100% means fully opaque (the basemap
+  // shouldn't show through at all), not 72-88% of opaque as before.
   return {
     fill        : true,
     fillColor   : c,
-    fillOpacity : (S.luPick ? 0.88 : 0.72) * S.opLanduse,
+    fillOpacity : S.opLanduse,
     stroke      : true,
     color       : proposedMark ? '#8a1f14' : shade(c, -0.42),
-    weight      : proposedMark ? 1.6 : (S.luPick ? 0.9 : 0.45),
+    weight      : proposedMark ? 1.6 : (S.luPicks.size ? 0.9 : 0.45),
     dashArray   : proposedMark ? '3 2' : null,
-    opacity     : (proposedMark ? S.opCategory : 0.9) * S.opLanduse,
+    opacity     : proposedMark ? S.opCategory : S.opLanduse,
     interactive : true
   };
 }
@@ -988,13 +994,31 @@ function soloGroup(g) {
 
 // Direct setter — used by the Land Use select and search results, where
 // choosing the same value again should keep it selected, not toggle off.
+// Single pick — used by table rows, chart clicks, and search, which all
+// mean "isolate just this one class" rather than add to a multi-select.
 function setClassPick(lu) {
-  S.luPick = lu || null;
-  if (S.luPick) {
-    S.offClasses.delete(S.luPick);   // picking a class should always reveal it
-    syncClassBox(S.luPick);
-    syncGroupBox(S.luGroup[S.luPick]);
+  S.luPicks = lu ? new Set([lu]) : new Set();
+  if (lu) {
+    S.offClasses.delete(lu);   // picking a class should always reveal it
+    syncClassBox(lu);
+    syncGroupBox(S.luGroup[lu]);
   }
+  syncControls();
+  afterFilter();
+  markTable();
+}
+
+// Used by the multi-select Land Use dropdown specifically — replaces
+// the whole picked set at once (ctrl/cmd-click chooses several), and
+// reveals any of them that had been individually toggled off in the
+// legend, same as a single pick does.
+function setClassPicks(list) {
+  S.luPicks = new Set(list);
+  S.luPicks.forEach(lu => {
+    S.offClasses.delete(lu);
+    syncClassBox(lu);
+    syncGroupBox(S.luGroup[lu]);
+  });
   syncControls();
   afterFilter();
   markTable();
@@ -1003,31 +1027,47 @@ function setClassPick(lu) {
 // Toggling wrapper — used by table rows and chart clicks, where clicking
 // the same item again clears the isolation.
 function pickClass(lu) {
-  setClassPick(S.luPick === lu ? null : lu);
-  if (S.luPick) zoomToClass(S.luPick);
+  setClassPick(S.luPicks.size === 1 && S.luPicks.has(lu) ? null : lu);
+  if (S.luPicks.size) zoomToClasses(S.luPicks);
 }
 
-function zoomToClass(lu) {
-  const g = S.luGroup[lu];
-  const lyr = S.layers[g];
-  if (!lyr) return;
-  const b = L.latLngBounds([]);
-  lyr.eachLayer(l => {
-    if (l.feature.properties.lu === lu) b.extend(l.getBounds());
+function zoomToClasses(names) {
+  const list = names && names.size ? [...names] : [];
+  if (!list.length) return;
+  const combined = L.latLngBounds([]);
+  list.forEach(lu => {
+    const g = S.luGroup[lu];
+    const lyr = S.layers[g];
+    if (!lyr) return;
+    lyr.eachLayer(l => { if (l.feature.properties.lu === lu) combined.extend(l.getBounds()); });
   });
-  if (b.isValid()) map.fitBounds(b, { padding: [28, 28], maxZoom: 15 });
+  if (combined.isValid()) map.fitBounds(combined, { padding: [28, 28], maxZoom: 15 });
 }
 
 let raf = null;
 function afterFilter() {
   if (raf) cancelAnimationFrame(raf);
   raf = requestAnimationFrame(() => {
-    Object.values(S.layers).forEach(l => l.setStyle(styleFor));
-    if (S.patternLayer) S.patternLayer.setStyle(patternStyleFor);
-    refreshBigNumbers();
-    readRibbon();
-    refreshStats();
-    updateLGSplitOverlay();
+    // Each step isolated: a failure in one (e.g. the pattern layer) must
+    // not silently prevent later steps — refreshStats() in particular —
+    // from running. This is what was making the legend look frozen.
+    try { Object.values(S.layers).forEach(l => l.setStyle(styleFor)); }
+    catch (e) { console.error('parcel layer restyle failed', e); }
+
+    try { if (S.patternLayer) S.patternLayer.setStyle(patternStyleFor); }
+    catch (e) { console.error('pattern layer restyle failed', e); }
+
+    try { refreshBigNumbers(); }
+    catch (e) { console.error('big numbers refresh failed', e); }
+
+    try { readRibbon(); }
+    catch (e) { console.error('ribbon refresh failed', e); }
+
+    try { refreshStats(); }
+    catch (e) { console.error('stats refresh failed', e); }
+
+    try { updateLGSplitOverlay(); }
+    catch (e) { console.error('LG split overlay failed', e); }
   });
 }
 
@@ -1038,19 +1078,19 @@ function patternStyleFor(f) {
   if (!visibleIgnoringLG(p)) return { stroke: false, fill: false, interactive: false };
 
   const spec = LU_PATTERN[p.lu];
-  const dimmed = S.localGov !== 'all' && p.lg !== S.localGov;
+  const dimmed = S.localGovs.size && !S.localGovs.has(p.lg);
   const proposedMark = S.showCategory && p.ct === 'Proposed';
   const ink = spec ? spec.ink : '#9aa79f';
 
   return {
     fill        : true,
     fillColor   : spec ? `url(#${spec._id})` : ink,
-    fillOpacity : (dimmed ? LG_DIM_OPACITY : (S.luPick ? 0.95 : 0.85)) * S.opLanduse,
+    fillOpacity : dimmed ? LG_DIM_OPACITY * S.opLanduse : S.opLanduse,
     stroke      : true,
     color       : dimmed ? shade(ink, -0.3) : (proposedMark ? '#8a1f14' : shade(ink, -0.3)),
-    weight      : dimmed ? 0.3 : (proposedMark ? 1.6 : (S.luPick ? 0.9 : 0.45)),
+    weight      : dimmed ? 0.3 : (proposedMark ? 1.6 : (S.luPicks.size ? 0.9 : 0.45)),
     dashArray   : (!dimmed && proposedMark) ? '3 2' : null,
-    opacity     : (dimmed ? LG_DIM_OPACITY : (proposedMark ? S.opCategory : 0.9)) * S.opLanduse,
+    opacity     : dimmed ? LG_DIM_OPACITY * S.opLanduse : (proposedMark ? S.opCategory : S.opLanduse),
     interactive : !dimmed
   };
 }
@@ -1116,22 +1156,33 @@ let lgSplitLayer = null;
 
 function updateLGSplitOverlay() {
   if (lgSplitLayer) { map.removeLayer(lgSplitLayer); lgSplitLayer = null; }
-  if (S.localGov === 'all' || typeof turf === 'undefined') return;
+  if (!S.localGovs.size || typeof turf === 'undefined') return;
 
-  const lgEntry = S.lgIndex.find(a => a.name === S.localGov);
-  const lgBounds = S.lgBounds && S.lgBounds[S.localGov];
-  if (!lgEntry || !lgBounds) return;
+  const lgEntries = [...S.localGovs].map(n => S.lgIndex.find(a => a.name === n)).filter(Boolean);
+  if (!lgEntries.length) return;
 
+  const combinedBounds = L.latLngBounds([]);
+  S.localGovs.forEach(n => { const b = S.lgBounds && S.lgBounds[n]; if (b) combinedBounds.extend(b); });
+  if (!combinedBounds.isValid()) return;
+
+  // Union every selected LG's polygon into one shape, so a parcel
+  // straddling the boundary BETWEEN two selected LGs isn't wrongly
+  // treated as partially outside the selection.
   let lgPoly;
-  try { lgPoly = turf.multiPolygon(lgEntry.rings); }
-  catch (e) { console.error('LG split: bad LG geometry', e); return; }
+  try {
+    lgPoly = turf.multiPolygon(lgEntries[0].rings);
+    for (let i = 1; i < lgEntries.length; i++) {
+      const merged = turf.union(lgPoly, turf.multiPolygon(lgEntries[i].rings));
+      if (merged) lgPoly = merged;
+    }
+  } catch (e) { console.error('LG split: bad LG geometry', e); return; }
 
   const overlayFeatures = [];
   Object.values(S.layers).forEach(lyr => {
     lyr.eachLayer(l => {
       const p = l.feature.properties;
       if (!visibleIgnoringLG(p)) return;
-      if (!l.getBounds().intersects(lgBounds)) return;   // fast reject, no overlap at all
+      if (!l.getBounds().intersects(combinedBounds)) return;   // fast reject, no overlap at all
 
       let parcelPoly, inter, interArea, totalArea;
       try {
@@ -1182,8 +1233,8 @@ function refreshStats() {
 function computeFilteredClassTotals() {
   const totals = {};
   S.props.forEach(p => {
-    if (S.district !== 'all' && (p.d || S.stats.district) !== S.district) return;
-    if (S.localGov !== 'all' && p.lg !== S.localGov) return;
+    if (S.districts.size && !S.districts.has(p.d || S.stats.district)) return;
+    if (S.localGovs.size && !S.localGovs.has(p.lg)) return;
     if (S.cat !== 'all' && p.ct !== S.cat) return;
     const t = totals[p.lu] || (totals[p.lu] = { acres: 0, count: 0 });
     t.acres += p.a;
@@ -1200,7 +1251,7 @@ function computeFilteredClassTotals() {
 // land use in that LG should be available to select".
 function refreshLegendAcres() {
   const totals = computeFilteredClassTotals();
-  const scoped = S.district !== 'all' || S.localGov !== 'all';   // is a geographic scope active at all?
+  const scoped = S.districts.size > 0 || S.localGovs.size > 0;   // is a geographic scope active at all?
   Object.keys(S.stats.groups).forEach(g => {
     let groupSum = 0, groupCount = 0;
     (S.stats.groups[g] || []).forEach(lu => {
@@ -1222,13 +1273,20 @@ function refreshLegendAcres() {
 // What is the user currently looking at? Named class > a solo'd group >
 // a specific Local Govt > a specific district > a category filter >
 // falls back to "Whole district" when nothing narrows the view.
+function setLabel(set, noun) {
+  const arr = [...set];
+  if (arr.length <= 2) return arr.join(' & ');
+  if (arr.length <= 4) return arr.join(', ');
+  return `${arr.length} ${noun}`;
+}
+
 function currentSelectionLabel() {
-  if (S.luPick) return S.luPick;
+  if (S.luPicks.size) return setLabel(S.luPicks, 'land uses');
   const active = orderedGroupTotals().filter(d =>
     (S.stats.groups[d.g] || []).some(lu => !S.offClasses.has(lu)));
   if (active.length === 1) return GROUP_LABEL[active[0].g] || active[0].g;
-  if (S.localGov !== 'all') return S.localGov;
-  if (S.district !== 'all') return S.district;
+  if (S.localGovs.size) return setLabel(S.localGovs, 'local govts');
+  if (S.districts.size) return setLabel(S.districts, 'districts');
   if (S.cat !== 'all') return S.cat + ' only';
   return 'Whole district';
 }
@@ -1244,12 +1302,13 @@ function refreshBigNumbers() {
   const totals = computeFilteredClassTotals();
   const viewTotal = Object.values(totals).reduce((s, t) => s + t.acres, 0);
 
-  if (S.luPick) {
-    const acres = totals[S.luPick] ? totals[S.luPick].acres : 0;
+  if (S.luPicks.size) {
+    const acres = [...S.luPicks].reduce((s, lu) => s + (totals[lu] ? totals[lu].acres : 0), 0);
     const pct = viewTotal ? 100 * acres / viewTotal : 0;
+    const title = S.luPicks.size === 1 ? [...S.luPicks][0] : `${S.luPicks.size} land uses selected`;
     host.innerHTML =
-      `<p class="bn__label">Selected land use</p>` +
-      `<h3 class="bn__title">${esc(S.luPick)}</h3>` +
+      `<p class="bn__label">Selected land use${S.luPicks.size > 1 ? 's' : ''}</p>` +
+      `<h3 class="bn__title">${esc(title)}</h3>` +
       `<div class="bn__figure">` +
         `<span class="bn__n">${nf(acres, acres < 100 ? 1 : 0)}</span><span class="bn__u">acres</span>` +
         `<div class="bn__pct">${nf(pct, 1)}% of this view</div>` +
@@ -1334,6 +1393,34 @@ function fill(sel, pairs) {
     .map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
 }
 
+// fill() rebuilds every <option> via innerHTML, which drops any selected
+// state — call this right after to re-apply which ones should be
+// selected. Empty set selects the "all" option, so it's visually clear
+// that's the active state on the multi-select rather than looking like
+// nothing at all is chosen.
+function setMultiSelected(sel, valuesSet) {
+  const el = $(sel);
+  if (!el) return;
+  Array.from(el.options).forEach(o => {
+    o.selected = valuesSet.size === 0 ? (o.value === 'all') : valuesSet.has(o.value);
+  });
+}
+
+// Reads a multi-select's chosen values into a Set, normalising the
+// "all X" option: picking it (or picking nothing) means no restriction
+// (empty Set) and visually deselects everything else; picking specific
+// values visually deselects "all" so the control isn't showing two
+// contradictory things as selected at once.
+function readMultiSelect(el) {
+  const vals = Array.from(el.selectedOptions).map(o => o.value);
+  if (!vals.length || vals.includes('all')) {
+    Array.from(el.options).forEach(o => { o.selected = (o.value === 'all'); });
+    return new Set();
+  }
+  Array.from(el.options).forEach(o => { if (o.value === 'all') o.selected = false; });
+  return new Set(vals);
+}
+
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1383,8 +1470,8 @@ function assignLocalGov() {
   // user has already navigated to a different district in the (brief)
   // time this took, populateLocalGovOptions() already has the right
   // list for wherever they are now — don't clobber it.
-  const effective = S.district === 'all' ? S.stats.district : S.district;
-  if (effective === S.stats.district) {
+  const effective = S.districts.size ? [...S.districts] : [S.stats.district];
+  if (effective.includes(S.stats.district)) {
     const names = [...new Set(S.props.map(p => p.lg).filter(Boolean))].sort();
     fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
     note('');
@@ -1567,19 +1654,19 @@ function choose(i) {
                   `<div class="pop__r"><span>Detail</span><span>${esc(e.sub)}</span></div>`)
       .openOn(map);
   } else {
-    zoomToClass(e.lu);
+    zoomToClasses(new Set([e.lu]));
   }
 }
 
 function syncControls() {
   const set = (sel, v) => { const el = $(sel); if (el) el.value = v; };
-  set('#fDistrict', S.district);
-  set('#fLocal',    S.localGov);
-  set('#fLanduse',  S.luPick || 'all');
+  setMultiSelected('#fDistrict', S.districts);
+  setMultiSelected('#fLocal',    S.localGovs);
+  setMultiSelected('#fLanduse',  S.luPicks);
   set('#fCategory', S.cat);
-  markActive('#fDistrict', S.district !== 'all');
-  markActive('#fLocal',    S.localGov !== 'all');
-  markActive('#fLanduse',  !!S.luPick);
+  markActive('#fDistrict', S.districts.size > 0);
+  markActive('#fLocal',    S.localGovs.size > 0);
+  markActive('#fLanduse',  S.luPicks.size > 0);
   markActive('#fCategory', S.cat !== 'all');
 }
 
@@ -1734,7 +1821,7 @@ function paintTable() {
   rowsForTable().forEach(c => {
     const tr = document.createElement('tr');
     tr.dataset.lu = c.lu;
-    if (c.lu === S.luPick) tr.className = 'is-on';
+    if (S.luPicks.has(c.lu)) tr.className = 'is-on';
     tr.innerHTML =
       `<td class="is-txt"><i class="tbl__sw" style="${swatchCSS(c.lu)}"></i>${c.lu}</td>` +
       `<td class="is-txt">${GROUP_LABEL[c.group] || c.group}</td>` +
@@ -1752,7 +1839,7 @@ function paintTable() {
 
 function markTable() {
   $$('#tblBody tr').forEach(tr =>
-    tr.classList.toggle('is-on', tr.dataset.lu === S.luPick));
+    tr.classList.toggle('is-on', S.luPicks.has(tr.dataset.lu)));
 }
 
 function csv() {
@@ -1818,42 +1905,47 @@ function wire() {
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
   on('#fDistrict', 'change', e => {
-    S.district = e.target.value;
-    S.localGov = 'all';   // a previous LG pick may not belong to the new district
+    S.districts = readMultiSelect(e.target);
+    S.localGovs = new Set();   // a previous LG pick may not belong to the new district(s)
     populateLocalGovOptions();
     populateLanduseOptions();
     updateHighlight();
-    zoomToDistrict(S.district);
+    zoomToDistricts(S.districts);
     updateDataAvailabilityNote();
-    markActive('#fDistrict', S.district !== 'all');
+    markActive('#fDistrict', S.districts.size > 0);
     markActive('#fLocal', false);
     afterFilter();
   });
   on('#fLocal', 'change', e => {
-    S.localGov = e.target.value;
-    if (S.localGov !== 'all') {
-      // Picking an LG from the full "All districts" list should bring
-      // its parent district along, so the two controls stay consistent.
-      const entry = S.lgIndex.find(a => a.name === S.localGov);
-      if (entry && entry.district && entry.district !== S.district) {
-        S.district = entry.district;
+    S.localGovs = readMultiSelect(e.target);
+    if (S.localGovs.size) {
+      // If any picked LG belongs to a district not currently selected,
+      // bring its parent district along too, so the two controls stay
+      // consistent — same idea as the old single-select behaviour.
+      const parents = new Set([...S.localGovs]
+        .map(n => { const entry = S.lgIndex.find(a => a.name === n); return entry && entry.district; })
+        .filter(Boolean));
+      const needsUpdate = [...parents].some(d => !S.districts.has(d));
+      if (needsUpdate && parents.size) {
+        parents.forEach(d => S.districts.add(d));
         populateLocalGovOptions();
-        const elL = $('#fLocal'); if (elL) elL.value = S.localGov;
-        const elD = $('#fDistrict'); if (elD) elD.value = S.district;
+        setMultiSelected('#fLocal', S.localGovs);
+        setMultiSelected('#fDistrict', S.districts);
         updateDataAvailabilityNote();
-        markActive('#fDistrict', S.district !== 'all');
+        markActive('#fDistrict', S.districts.size > 0);
       }
     }
     populateLanduseOptions();
     updateHighlight();
-    zoomToLocalGov(S.localGov);
-    markActive('#fLocal', S.localGov !== 'all');
+    zoomToLocalGovs(S.localGovs);
+    markActive('#fLocal', S.localGovs.size > 0);
     afterFilter();
   });
 
   on('#fLanduse', 'change', e => {
-    setClassPick(e.target.value === 'all' ? null : e.target.value);
-    if (S.luPick) zoomToClass(S.luPick);
+    const picked = readMultiSelect(e.target);
+    setClassPicks(picked);
+    if (S.luPicks.size) zoomToClasses(S.luPicks);
   });
 
   // Direct set on the select — no toggle, since re-picking the same
@@ -1916,9 +2008,9 @@ function wire() {
 function resetAll() {
   S.offClasses.clear();
   S.cat = 'all';
-  S.district = 'all';
-  S.localGov = 'all';
-  S.luPick = null;
+  S.districts = new Set();
+  S.localGovs = new Set();
+  S.luPicks = new Set();
   S.query = '';
   S.showDistrict = true;
   S.showLG = false;
@@ -1942,7 +2034,7 @@ function resetAll() {
   updateDataAvailabilityNote();
   afterFilter();
   paintTable();
-  zoomToDistrict('all');
+  zoomToDistricts(S.districts);
 }
 
 })();
