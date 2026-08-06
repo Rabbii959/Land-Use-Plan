@@ -155,8 +155,6 @@ body{
 }
 .fld.is-active .fld__l{color:#6b5312}
 
-.fld__top{display:flex;align-items:center;gap:8px;min-width:0}
-
 .fld__opac{display:flex;align-items:center;gap:7px;padding-left:22px}
 .fld__range{
   flex:1;min-width:0;height:3px;
@@ -175,6 +173,36 @@ body{
 }
 .fld__range:disabled{opacity:.4;cursor:not-allowed}
 .fld__range:disabled::-webkit-slider-thumb{cursor:not-allowed}
+.fld__top{display:flex;align-items:flex-start;gap:8px;min-width:0;padding-top:2px}
+
+/* Native multi-select listboxes for District/Local Govt/Land Use —
+   ctrl/cmd-click chooses several. Deliberately restyled away from the
+   compact single-line .sel dropdown look, since a listbox needs its
+   own visible rows, not a closed chevron control. */
+.sel--multi{
+  appearance:auto;-webkit-appearance:listbox;
+  background-image:none;
+  border:1px solid var(--rule);
+  border-radius:8px;
+  padding:2px;
+  font:600 12px var(--f-body);
+  max-width:none;width:100%;min-width:120px;
+  white-space:normal;
+  cursor:default;
+}
+.sel--multi option{
+  padding:4px 7px;border-radius:5px;cursor:pointer;
+}
+.sel--multi option:checked{
+  background:var(--grn-700);color:#fff;
+}
+.sel--multi:disabled{background:var(--rule-2)}
+
+.filters__hint{
+  margin:9px 0 0;
+  font-size:11.5px;color:var(--mute);
+}
+
 .fld__opacn{
   flex:none;width:34px;text-align:right;
   font:600 10px var(--f-mono);color:var(--mute);
