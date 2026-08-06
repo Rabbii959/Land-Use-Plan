@@ -40,7 +40,8 @@
           <input type="checkbox" class="fld__vis" id="visDistrict" checked
                  title="Show district boundaries on the map" aria-label="Show district boundaries on the map">
           <label class="fld__l" for="fDistrict">District</label>
-          <select class="sel" id="fDistrict"></select>
+          <select class="sel sel--multi" id="fDistrict" multiple size="5"
+                  aria-label="District — ctrl/cmd-click to select more than one"></select>
         </div>
         <div class="fld__opac">
           <input type="range" class="fld__range" id="opDistrict" min="0" max="100" value="100"
@@ -53,7 +54,8 @@
           <input type="checkbox" class="fld__vis" id="visLG"
                  title="Show Local Govt boundaries on the map" aria-label="Show Local Govt boundaries on the map">
           <label class="fld__l" for="fLocal">Local Govt</label>
-          <select class="sel" id="fLocal" disabled></select>
+          <select class="sel sel--multi" id="fLocal" multiple size="5" disabled
+                  aria-label="Local Govt — ctrl/cmd-click to select more than one"></select>
         </div>
         <div class="fld__opac">
           <input type="range" class="fld__range" id="opLG" min="0" max="100" value="100"
@@ -66,7 +68,8 @@
           <input type="checkbox" class="fld__vis" id="visLanduse"
                  title="Show land use parcels on the map" aria-label="Show land use parcels on the map">
           <label class="fld__l" for="fLanduse">Land Use</label>
-          <select class="sel" id="fLanduse"></select>
+          <select class="sel sel--multi" id="fLanduse" multiple size="5"
+                  aria-label="Land Use — ctrl/cmd-click to select more than one"></select>
         </div>
         <div class="fld__opac">
           <input type="range" class="fld__range" id="opLanduse" min="0" max="100" value="100"
@@ -113,6 +116,7 @@
         </svg>
       </button>
     </div>
+    <p class="filters__hint">District, Local Govt, and Land Use each accept more than one — hold Ctrl (Windows) or ⌘ (Mac) and click to select several.</p>
     <p class="filters__note" id="fNote" hidden></p>
   </section>
 
