@@ -127,17 +127,98 @@ fetch('data/stats.json')
     console.error(err);
   });
 
+/* ─────────────────────────────────────────── official symbology
+   Extracted directly from the Punjab Spatial Planning Authority's own
+   Landuse_Symbology.pdf (an Esri ArcMap legend export) — not invented.
+   Solid swatches use their fill colour as-is; hatched/patterned
+   swatches (many of the industrial and buffer-zone classes) use the
+   colour of the pattern's ink, sampled from the rendered page and
+   cross-checked against the PDF's own vector fill/stroke data, since
+   web polygons can't reproduce a hatch texture. A few of these are
+   pale (Religious Building, Vacant Area) and will show mainly by their
+   darker outline on the map rather than a visible fill — that's the
+   source legend's own choice, not a rendering bug. */
+const LU_SYMBOLOGY = {
+  'Agriculture Area': '#d3ffbe',
+  'Agriculture Zone AUD': '#a87000',
+  'Agro Based Industry': '#8400a8',
+  'Agro Industry Zone': '#c500ff',
+  'Approved Housing Scheme': '#ffebbe',
+  'Brick Kiln': '#df73ff',
+  'Bypass or Ring Road': '#a80000',
+  'CBD Zone': '#00c5ff',
+  'City Park and Open Spaces': '#55ff00',
+  'Commercial': '#73b2ff',
+  'Commercial Urban Block': '#005ce6',
+  'Commercial Zone': '#73dfff',
+  'Cottage Industrial Zone': '#2892c7',
+  'Disposal Site': '#f5a27a',
+  'Economic Zone': '#ff00c5',
+  'Educational Institution - Private': '#ffff00',
+  'Educational Institution - Public': '#ffff00',
+  'Educational Institutional Zone': '#a0c29b',
+  'Educational Neighbourhood': '#ffff00',
+  'Existing Settlement': '#b66a50',
+  'Farm to Market Road': '#2892c7',
+  'Gawala Colony': '#beffe8',
+  'Grassland': '#267300',
+  'Graveyard': '#ffff00',
+  'Green Buffer Zone': '#4ce600',
+  'Health Institution - Private': '#ff7f7f',
+  'Health Institution - Public': '#ff7f7f',
+  'Health Neighbourhood': '#ff7f7f',
+  'Health Zone': '#ff7f7f',
+  'IT Neighbourhood': '#ffaa00',
+  'Industrial': '#d133ff',
+  'Industrial Urban Block': '#a900e6',
+  'Industrial Zone': '#e8beff',
+  'Institutional Zone': '#ff0000',
+  'Katchi Abadis': '#ffffbe',
+  'List A Abutting': '#004da8',
+  'Livestock Farming': '#d1ff73',
+  'Mixed Use Zone': '#73dfff',
+  'Natural Growth Boundary': '#d7c29e',
+  'Notified Area': '#e1e1e1',
+  'Oil Depot Buffer Zone': '#fa8d34',
+  'Orchard': '#a3ff73',
+  'Park and Open Spaces': '#55ff00',
+  'Public Building and Govt Office': '#e81014',
+  'Railway Station': '#ff0000',
+  'Recreational Zone': '#00a9e6',
+  'Religious Building': '#ffffff',
+  'Relocation Zone': '#b2b2b2',
+  'Residential Urban Block': '#ffaa00',
+  'Residential Zone': '#ffebaf',
+  'Road Widening': '#a87000',
+  'Specialized Industrial Zone': '#e8beff',
+  'State Land': '#4d4d4d',
+  'Structure Plan Road': '#004c73',
+  'Transport Terminal': '#9c9c9c',
+  'Transportation Network': '#e1e1e1',
+  'Vacant Area': '#e1e1e1',
+  'Warehouse and Freight Terminal': '#005ce6',
+  'Waste Water Treatment Plant': '#a87000',
+  'Water Body': '#bee8ff',
+};
+
 function init(stats) {
   S.stats = stats;
   assignGroupStyles(stats.groups, stats.groupLabels);
 
-  // class -> group, and a distinct shade per class within its group
+  // class -> group; colour comes from the official symbology table when
+  // the class is in it, otherwise falls back to a shade within the
+  // group's hue (keeps this working for a future district whose classes
+  // aren't covered by this specific legend).
   Object.entries(stats.groups).forEach(([g, classes]) => {
     const n = classes.length;
     classes.forEach((lu, i) => {
       S.luGroup[lu] = g;
-      const t = n === 1 ? 0 : (i / (n - 1)) * 0.52 - 0.2;   // -0.20 … +0.32
-      S.colour[lu] = shade(GROUP_HUE[g], t);
+      if (LU_SYMBOLOGY[lu]) {
+        S.colour[lu] = LU_SYMBOLOGY[lu];
+      } else {
+        const t = n === 1 ? 0 : (i / (n - 1)) * 0.52 - 0.2;   // -0.20 … +0.32
+        S.colour[lu] = shade(GROUP_HUE[g], t);
+      }
     });
   });
   stats.classes.forEach(c => {
@@ -313,8 +394,8 @@ function paintLayerList() {
     const chev = document.createElement('button');
     chev.type = 'button';
     chev.className = 'lgroup__chev';
-    chev.setAttribute('aria-expanded', 'true');
-    chev.setAttribute('aria-label', 'Collapse ' + (GROUP_LABEL[g] || g));
+    chev.setAttribute('aria-expanded', 'false');
+    chev.setAttribute('aria-label', 'Expand ' + (GROUP_LABEL[g] || g));
     chev.innerHTML = CHEV_SVG;
 
     const lab = document.createElement('label');
@@ -332,6 +413,7 @@ function paintLayerList() {
     const kids = document.createElement('div');
     kids.className = 'lchildren';
     kids.setAttribute('role', 'group');
+    kids.hidden = true;
 
     classes.forEach(c => {
       const row = document.createElement('label');
@@ -548,10 +630,19 @@ function loadAdminBoundaries() {
     } catch (e) {
       console.error('processing province boundaries failed', e);
     }
-  }).catch(() => note(
-    'Province-wide boundaries are not present. Add <code>data/districts.geojson</code> ' +
-    'and <code>data/local_govts.geojson</code> (see README) and both filters switch on ' +
-    'automatically.'));
+  }).catch(() => {
+    note(
+      'Province-wide boundaries are not present. Add <code>data/districts.geojson</code> ' +
+      'and <code>data/local_govts.geojson</code> (see README) and both filters switch on ' +
+      'automatically.');
+    // Without them the map would otherwise stay stuck at the approximate
+    // whole-Punjab placeholder view forever — fall back to the district
+    // this dashboard actually has parcel data for.
+    try {
+      const bb = S.stats.bbox;
+      map.fitBounds(L.latLngBounds([bb[1], bb[0]], [bb[3], bb[2]]), { padding: [16, 16] });
+    } catch (e) { console.error('fallback zoom failed', e); }
+  });
 }
 
 
@@ -563,28 +654,25 @@ function districtStyle(name) {
   if (!S.showDistrict) return { fill: false, stroke: false };
   const selected = name === S.highlightDistrict;
   return {
-    fill: true,
-    fillColor: '#9ed6ab',
-    fillOpacity: selected ? 0.38 : 0.22,
-    color: '#000',
+    fill: false,
+    color: selected ? '#ffd400' : '#FFA7A9',
     weight: selected ? 4 : 2,
     opacity: 1
   };
 }
 
-// Every Local Govt unit: light red outline, always visible when the
-// master checkbox is on. The selected one gets a heavier, fully-opaque
-// outline plus a light fill.
+// Local Govt: black outline by default, no fill; red and heavier when
+// selected. ("Red black" in the request read as black-by-default with
+// red reserved for the selected state, matching point 4's own wording —
+// flag if a literal dark-red default was meant instead.)
 function lgStyle(name) {
   if (!S.showLG) return { fill: false, stroke: false };
   const selected = name === S.highlightLG;
   return {
-    fill: selected,
-    fillColor: '#e0736a',
-    fillOpacity: selected ? 0.22 : 0,
-    color: '#e0736a',
+    fill: false,
+    color: selected ? '#ff0000' : '#000000',
     weight: selected ? 3.5 : 1.4,
-    opacity: selected ? 1 : 0.7
+    opacity: selected ? 1 : 0.75
   };
 }
 
@@ -611,6 +699,28 @@ function populateLocalGovOptions() {
   el.removeAttribute('title');
   const pill = el.closest('.fld');
   if (pill) pill.classList.remove('fld--disabled');
+}
+
+// Land Use options cascade to the current District/Local Govt (and
+// Category) scope — only classes actually present there are
+// selectable, each labelled with its count for that scope specifically,
+// not the whole-district count. Clears the current pick if it no
+// longer exists in the new scope, rather than leaving a stale selection.
+function populateLanduseOptions() {
+  const el = $('#fLanduse');
+  if (!el || !S.props.length) return;   // parcels not loaded yet — leave the static placeholder list
+  const totals = computeFilteredClassTotals();
+  const available = S.stats.classes
+    .filter(c => totals[c.lu])
+    .slice()
+    .sort((a, b) => a.lu.localeCompare(b.lu));
+  fill('#fLanduse', [['all', 'All land uses']].concat(
+    available.map(c => [c.lu, `${c.lu} (${totals[c.lu].count})`])));
+  if (S.luPick && !totals[S.luPick]) {
+    setClassPick(null);
+  } else {
+    el.value = S.luPick || 'all';
+  }
 }
 
 function zoomToDistrict(name) {
@@ -666,6 +776,7 @@ function loadLayer(group, file) {
         // .catch() below and double-count this layer as failed.
         try {
           refreshStats();
+          populateLanduseOptions();
           if (S.pendingLgAssign) { S.pendingLgAssign = false; assignLocalGov(); }
         } catch (e) {
           console.error('post-load finalisation failed', e);
@@ -888,35 +999,49 @@ function refreshStats() {
   refreshBigNumbers();
 }
 
-// Area per land-use class under the current District/Local Govt/Category
-// filters — deliberately NOT narrowed by luPick or offClasses, since this
-// answers "what does everything look like under my geographic/category
-// filter" (the legend numbers, the big-numbers list), not "what's
-// currently drawn on the map".
+// Area AND count per land-use class under the current District/Local
+// Govt/Category filters — deliberately NOT narrowed by luPick or
+// offClasses, since this answers "what does everything look like under
+// my geographic/category filter" (the legend numbers, the big-numbers
+// list, the Land Use dropdown's own options), not "what's currently
+// drawn on the map".
 function computeFilteredClassTotals() {
   const totals = {};
   S.props.forEach(p => {
     if (S.district !== 'all' && (p.d || S.stats.district) !== S.district) return;
     if (S.localGov !== 'all' && p.lg !== S.localGov) return;
     if (S.cat !== 'all' && p.ct !== S.cat) return;
-    totals[p.lu] = (totals[p.lu] || 0) + p.a;
+    const t = totals[p.lu] || (totals[p.lu] = { acres: 0, count: 0 });
+    t.acres += p.a;
+    t.count += 1;
   });
   return totals;
 }
 
 // Updates the acreage shown next to every class/group in the legend
 // tree in place — no rebuild, so expand/collapse state and checkbox
-// listeners are untouched.
+// listeners are untouched. Classes (and whole groups, if none of their
+// classes have anything here) absent from the current District/Local
+// Govt scope are hidden rather than just shown at zero, matching "only
+// land use in that LG should be available to select".
 function refreshLegendAcres() {
   const totals = computeFilteredClassTotals();
+  const scoped = S.district !== 'all' || S.localGov !== 'all';   // is a geographic scope active at all?
   Object.keys(S.stats.groups).forEach(g => {
-    let groupSum = 0;
+    let groupSum = 0, groupCount = 0;
     (S.stats.groups[g] || []).forEach(lu => {
-      const acres = totals[lu] || 0;
+      const t = totals[lu];
+      const acres = t ? t.acres : 0;
       groupSum += acres;
+      groupCount += t ? t.count : 0;
       if (CLASS_N_EL[lu]) CLASS_N_EL[lu].textContent = fmtAc(acres);
+      if (CLASS_ROW[lu]) CLASS_ROW[lu].classList.toggle('is-unavailable', scoped && !t);
     });
     if (GROUP_N_EL[g]) GROUP_N_EL[g].textContent = fmtAc(groupSum);
+    if (GROUP_ROW[g] && GROUP_ROW[g].closest) {
+      const wrap = GROUP_ROW[g].closest('.lgroup');
+      if (wrap) wrap.classList.toggle('is-unavailable', scoped && groupCount === 0);
+    }
   });
 }
 
@@ -943,10 +1068,10 @@ function refreshBigNumbers() {
   if (!host) return;
 
   const totals = computeFilteredClassTotals();
-  const viewTotal = Object.values(totals).reduce((s, a) => s + a, 0);
+  const viewTotal = Object.values(totals).reduce((s, t) => s + t.acres, 0);
 
   if (S.luPick) {
-    const acres = totals[S.luPick] || 0;
+    const acres = totals[S.luPick] ? totals[S.luPick].acres : 0;
     const pct = viewTotal ? 100 * acres / viewTotal : 0;
     host.innerHTML =
       `<p class="bn__label">Selected land use</p>` +
@@ -964,7 +1089,7 @@ function refreshBigNumbers() {
   if (activeGroups.length === 1) {
     const g = activeGroups[0].g;
     const members = (S.stats.groups[g] || [])
-      .map(lu => ({ lu, acres: totals[lu] || 0 }))
+      .map(lu => ({ lu, acres: totals[lu] ? totals[lu].acres : 0 }))
       .sort((a, b) => b.acres - a.acres);
     const groupAcres = members.reduce((s, m) => s + m.acres, 0);
     const pct = viewTotal ? 100 * groupAcres / viewTotal : 0;
@@ -982,7 +1107,7 @@ function refreshBigNumbers() {
   }
 
   const all = Object.keys(totals)
-    .map(lu => ({ lu, acres: totals[lu] }))
+    .map(lu => ({ lu, acres: totals[lu].acres }))
     .filter(d => d.acres > 0)
     .sort((a, b) => b.acres - a.acres);
   host.innerHTML =
@@ -1522,6 +1647,7 @@ function wire() {
     S.district = e.target.value;
     S.localGov = 'all';   // a previous LG pick may not belong to the new district
     populateLocalGovOptions();
+    populateLanduseOptions();
     updateHighlight();
     zoomToDistrict(S.district);
     updateDataAvailabilityNote();
@@ -1544,6 +1670,7 @@ function wire() {
         markActive('#fDistrict', S.district !== 'all');
       }
     }
+    populateLanduseOptions();
     updateHighlight();
     zoomToLocalGov(S.localGov);
     markActive('#fLocal', S.localGov !== 'all');
@@ -1615,6 +1742,7 @@ function resetAll() {
   syncAllLayerBoxes();
   syncControls();
   if (S.lgByDistrict && Object.keys(S.lgByDistrict).length) populateLocalGovOptions();
+  populateLanduseOptions();
   updateHighlight();
   updateDataAvailabilityNote();
   afterFilter();
