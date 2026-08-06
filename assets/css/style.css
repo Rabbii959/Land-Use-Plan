@@ -449,6 +449,11 @@ body{
 .lchild__row.is-off .lchild__nm,
 .lchild__row.is-off .lchild__n{opacity:.42}
 
+/* Absent from the current District/Local Govt scope entirely — hidden,
+   not just dimmed, matching "only available to select" for that area. */
+.lchild__row.is-unavailable{display:none}
+.lgroup.is-unavailable{display:none}
+
 /* ───────────────────────────────────────────── mini stats */
 .mini{margin:12px 0 0;display:flex;flex-direction:column;gap:0}
 .mini > div{
