@@ -96,6 +96,7 @@ const S = {
   lgBounds        : {},    // lg name -> Leaflet LatLngBounds
   highlightDistrict: null, // which district outline is currently drawn
   highlightLG      : null, // which LG outline is currently drawn, if any
+  patternLayer     : null, // SVG layer holding parcels whose class uses a real hatch texture
   showDistrict : true,   // District boundary layer visibility (checkbox)
   showLG       : false,  // Local Govt boundary layer visibility (checkbox)
   showLanduse  : false,  // land use parcels visibility (checkbox) — master switch
@@ -200,6 +201,94 @@ const LU_SYMBOLOGY = {
   'Waste Water Treatment Plant': '#a87000',
   'Water Body': '#bee8ff',
 };
+
+/* Classes the source PDF draws as a hatch/crosshatch/stripe/dot texture
+   rather than a flat fill. Web polygons can't reproduce this via a
+   plain colour, so these ~1,500 parcels (8.8% of the district) render
+   on a small separate SVG layer with real pattern fills, while the
+   other ~91% stay on the fast canvas layer as flat colour. Each entry:
+   pattern type, ink colour, and an optional background (defaults to
+   white) for the handful of classes whose backing tint is itself part
+   of the symbol (Educational Institution - Private, State Land). */
+const LU_PATTERN = {
+  'Agro Based Industry':               { type: 'cross',  ink: '#8400a8' },
+  'Agro Industry Zone':                { type: 'hlines', ink: '#c500ff' },
+  'Approved Housing Scheme':           { type: 'cross',  ink: '#e69800' },
+  'Brick Kiln':                        { type: 'diag',   ink: '#df73ff' },
+  'CBD Zone':                          { type: 'cross',  ink: '#00c5ff' },
+  'City Park and Open Spaces':         { type: 'cross',  ink: '#2b8000' },
+  'Commercial Zone':                   { type: 'diag',   ink: '#0091d9' },
+  'Disposal Site':                     { type: 'diag',   ink: '#8a4b2f' },
+  'Economic Zone':                     { type: 'vlines', ink: '#ff00c5' },
+  'Educational Institution - Private': { type: 'diag',   ink: '#ff0000', bg: '#ffff00' },
+  'Educational Neighbourhood':         { type: 'hlines', ink: '#e6c300', bg: '#fffbe0' },
+  'Orchard':                           { type: 'dots',   ink: '#2b8000' },
+  'Railway Station':                   { type: 'diag',   ink: '#ff0000' },
+  'Recreational Zone':                 { type: 'vlines', ink: '#00a9e6' },
+  'Relocation Zone':                   { type: 'hlines', ink: '#707070' },
+  'Residential Zone':                  { type: 'hlines', ink: '#e6b800' },
+  'Specialized Industrial Zone':       { type: 'cross',  ink: '#c500ff' },
+  'State Land':                        { type: 'cross',  ink: '#000000', bg: '#d9d9d9' },
+  'Vacant Area':                       { type: 'diag',   ink: '#bdbdbd' },
+  'Warehouse and Freight Terminal':    { type: 'cross',  ink: '#005ce6' },
+  'Waste Water Treatment Plant':       { type: 'cross',  ink: '#a87000' },
+};
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+const PATTERN_TILE = 8;
+
+// Builds one <pattern> element for a class's hatch spec, sized to
+// PATTERN_TILE, tileable. Assigns and returns its element id.
+function buildPatternDef(lu, spec, index) {
+  const id = 'luPat' + index;
+  const s = PATTERN_TILE, h = s / 2;
+  let shapes = '';
+  if (spec.type === 'diag') {
+    shapes = `<line x1="0" y1="${s}" x2="${s}" y2="0" stroke="${spec.ink}" stroke-width="1.3"/>`;
+  } else if (spec.type === 'cross') {
+    shapes = `<line x1="0" y1="0" x2="${s}" y2="${s}" stroke="${spec.ink}" stroke-width="1"/>` +
+             `<line x1="0" y1="${s}" x2="${s}" y2="0" stroke="${spec.ink}" stroke-width="1"/>`;
+  } else if (spec.type === 'hlines') {
+    shapes = `<line x1="0" y1="${h}" x2="${s}" y2="${h}" stroke="${spec.ink}" stroke-width="1.5"/>`;
+  } else if (spec.type === 'vlines') {
+    shapes = `<line x1="${h}" y1="0" x2="${h}" y2="${s}" stroke="${spec.ink}" stroke-width="1.5"/>`;
+  } else if (spec.type === 'dots') {
+    shapes = `<circle cx="${h}" cy="${h}" r="1.1" fill="${spec.ink}"/>`;
+  }
+  const pat = document.createElementNS(SVGNS, 'pattern');
+  pat.setAttribute('id', id);
+  pat.setAttribute('width', s);
+  pat.setAttribute('height', s);
+  pat.setAttribute('patternUnits', 'userSpaceOnUse');
+  pat.innerHTML = `<rect width="${s}" height="${s}" fill="${spec.bg || '#ffffff'}"/>` + shapes;
+  spec._id = id;
+  return pat;
+}
+
+// Small UI swatches (legend, search, table, big-numbers) — a flat
+// colour for solid classes, or a scaled-down CSS approximation of the
+// real hatch/cross/stripe/dot pattern for the ~21 classes that use one,
+// so these stay visually consistent with the map itself.
+function swatchCSS(lu) {
+  const spec = LU_PATTERN[lu];
+  const c = S.colour[lu] || '#9aa79f';
+  if (!spec) return `background:${c}`;
+  const bg = spec.bg || '#ffffff';
+  const ink = spec.ink;
+  if (spec.type === 'diag')
+    return `background:${bg};background-image:repeating-linear-gradient(45deg,${ink} 0,${ink} 1.2px,transparent 1.2px,transparent 4px)`;
+  if (spec.type === 'cross')
+    return `background:${bg};background-image:` +
+      `repeating-linear-gradient(45deg,${ink} 0,${ink} 1px,transparent 1px,transparent 4px),` +
+      `repeating-linear-gradient(135deg,${ink} 0,${ink} 1px,transparent 1px,transparent 4px)`;
+  if (spec.type === 'hlines')
+    return `background:${bg};background-image:repeating-linear-gradient(0deg,${ink} 0,${ink} 1.2px,transparent 1.2px,transparent 4px)`;
+  if (spec.type === 'vlines')
+    return `background:${bg};background-image:repeating-linear-gradient(90deg,${ink} 0,${ink} 1.2px,transparent 1.2px,transparent 4px)`;
+  if (spec.type === 'dots')
+    return `background:${bg};background-image:radial-gradient(${ink} 35%,transparent 35%);background-size:4px 4px`;
+  return `background:${c}`;
+}
 
 function init(stats) {
   S.stats = stats;
@@ -421,7 +510,7 @@ function paintLayerList() {
       row.dataset.lu = c.lu;
       row.innerHTML =
         '<input type="checkbox" class="lchild__box" checked>' +
-        `<i class="lchild__sw" style="background:${S.colour[c.lu]}"></i>` +
+        `<i class="lchild__sw" style="${swatchCSS(c.lu)}"></i>` +
         `<span class="lchild__nm">${esc(c.lu)}</span>` +
         `<span class="lchild__n">${fmtAc(c.acres)}</span>`;
       const box = row.querySelector('input');
@@ -777,6 +866,7 @@ function loadLayer(group, file) {
         try {
           refreshStats();
           populateLanduseOptions();
+          buildPatternLayer();
           if (S.pendingLgAssign) { S.pendingLgAssign = false; assignLocalGov(); }
         } catch (e) {
           console.error('post-load finalisation failed', e);
@@ -819,6 +909,7 @@ const LG_DIM_OPACITY = 0.2;
 function styleFor(f) {
   const p = f.properties;
   if (!visibleIgnoringLG(p)) return { stroke: false, fill: false, interactive: false };
+  if (LU_PATTERN[p.lu]) return { stroke: false, fill: false, interactive: false };  // drawn on the pattern layer instead
 
   const c = S.colour[p.lu] || '#9aa79f';
   const dimmed = S.localGov !== 'all' && p.lg !== S.localGov;
@@ -924,11 +1015,86 @@ function afterFilter() {
   if (raf) cancelAnimationFrame(raf);
   raf = requestAnimationFrame(() => {
     Object.values(S.layers).forEach(l => l.setStyle(styleFor));
+    if (S.patternLayer) S.patternLayer.setStyle(patternStyleFor);
     refreshBigNumbers();
     readRibbon();
     refreshStats();
     updateLGSplitOverlay();
   });
+}
+
+// Same visibility/dimming/category rules as the main styleFor(), but
+// fills with the class's real pattern instead of a flat colour.
+function patternStyleFor(f) {
+  const p = f.properties;
+  if (!visibleIgnoringLG(p)) return { stroke: false, fill: false, interactive: false };
+
+  const spec = LU_PATTERN[p.lu];
+  const dimmed = S.localGov !== 'all' && p.lg !== S.localGov;
+  const proposedMark = S.showCategory && p.ct === 'Proposed';
+  const ink = spec ? spec.ink : '#9aa79f';
+
+  return {
+    fill        : true,
+    fillColor   : spec ? `url(#${spec._id})` : ink,
+    fillOpacity : dimmed ? LG_DIM_OPACITY : (S.luPick ? 0.95 : 0.85),
+    stroke      : true,
+    color       : dimmed ? shade(ink, -0.3) : (proposedMark ? '#8a1f14' : shade(ink, -0.3)),
+    weight      : dimmed ? 0.3 : (proposedMark ? 1.6 : (S.luPick ? 0.9 : 0.45)),
+    dashArray   : (!dimmed && proposedMark) ? '3 2' : null,
+    opacity     : dimmed ? LG_DIM_OPACITY : 0.9,
+    interactive : !dimmed
+  };
+}
+
+// Built once, after every parcel layer has loaded: pulls out just the
+// ~1,500 parcels (8.8% of the district) whose class needs a real hatch
+// texture rather than a flat fill, and renders them on their own SVG
+// layer with genuine <pattern> fills — the other ~91% stay on the fast
+// canvas layers untouched.
+function buildPatternLayer() {
+  const patternedLu = Object.keys(LU_PATTERN);
+  if (!patternedLu.length) return;
+
+  const features = [];
+  Object.values(S.layers).forEach(lyr => {
+    lyr.eachLayer(l => {
+      if (LU_PATTERN[l.feature.properties.lu]) features.push(l.feature);
+    });
+  });
+  if (!features.length) return;
+
+  let renderer;
+  try {
+    renderer = L.svg();
+    renderer.addTo(map);
+  } catch (e) { console.error('pattern layer: SVG renderer unavailable', e); return; }
+
+  try {
+    const svgRoot = renderer._container;
+    if (svgRoot) {
+      let defs = svgRoot.querySelector('defs');
+      if (!defs) {
+        defs = document.createElementNS(SVGNS, 'defs');
+        svgRoot.insertBefore(defs, svgRoot.firstChild);
+      }
+      Object.entries(LU_PATTERN).forEach(([lu, spec], i) => {
+        defs.appendChild(buildPatternDef(lu, spec, i));
+      });
+    }
+  } catch (e) { console.error('pattern defs failed', e); }
+
+  S.patternLayer = L.geoJSON({ type: 'FeatureCollection', features }, {
+    renderer,
+    style: patternStyleFor,
+    onEachFeature: (f, lyr) => lyr.on('click', e => {
+      if (!visible(f.properties)) return;
+      L.popup({ maxWidth: 320 }).setLatLng(e.latlng).setContent(popup(f.properties)).openOn(map);
+    })
+  }).addTo(map);
+
+  try { S.patternLayer.bringToFront(); } catch (e) { /* cosmetic only */ }
+  console.info(`pattern layer: ${features.length} parcels across ${patternedLu.length} patterned classes`);
 }
 
 /* ── true boundary-straddling split (Turf.js) ─────────────────────
@@ -1122,7 +1288,7 @@ function refreshBigNumbers() {
 
 function bnRow(d) {
   return `<div class="bn__row" data-lu="${esc(d.lu)}">` +
-    `<i class="bn__sw" style="background:${S.colour[d.lu] || '#9aa79f'}"></i>` +
+    `<i class="bn__sw" style="${swatchCSS(d.lu)}"></i>` +
     `<span class="bn__nm">${esc(d.lu)}</span>` +
     `<span class="bn__ac">${fmtAc(d.acres)}</span></div>`;
 }
@@ -1334,7 +1500,7 @@ function renderSugg(q) {
   } else {
     list.innerHTML = S.sugg.map((e, i) => `
       <li class="ac__i" role="option" data-i="${i}" aria-selected="false">
-        <i class="ac__sw" style="background:${S.colour[e.lu] || '#9aa79f'}"></i>
+        <i class="ac__sw" style="${swatchCSS(e.lu)}"></i>
         <span class="ac__b">
           <span class="ac__t">${hilite(e.label, q)}</span>
           <span class="ac__s">${esc(e.sub)}</span>
@@ -1562,7 +1728,7 @@ function paintTable() {
     tr.dataset.lu = c.lu;
     if (c.lu === S.luPick) tr.className = 'is-on';
     tr.innerHTML =
-      `<td class="is-txt"><i class="tbl__sw" style="background:${S.colour[c.lu]}"></i>${c.lu}</td>` +
+      `<td class="is-txt"><i class="tbl__sw" style="${swatchCSS(c.lu)}"></i>${c.lu}</td>` +
       `<td class="is-txt">${GROUP_LABEL[c.group] || c.group}</td>` +
       `<td class="is-txt"><span class="tbl__tag${c.category === 'Proposed' ? ' is-prop' : ''}">${c.category}</span></td>` +
       `<td>${nf(c.count)}</td>` +
