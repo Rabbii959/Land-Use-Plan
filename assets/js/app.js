@@ -761,7 +761,7 @@ function lgStyle(name) {
   return {
     fill: false,
     color: selected ? '#ff0000' : '#000000',
-    weight: selected ? 3.5 : 1.4,
+    weight: selected ? 3.5 : 2,
     opacity: selected ? 1 : S.opLG
   };
 }
@@ -1468,7 +1468,11 @@ function mselOpen(name) {
   panel.hidden = false;
   btn.setAttribute('aria-expanded', 'true');
   const search = $(ids.search);
-  if (search) { search.value = ''; mselRenderList(name, ''); search.focus(); }
+  if (search) {
+    search.value = '';
+    mselRenderList(name, '');
+    try { search.focus(); } catch (e) { /* non-critical — panel still opens fine either way */ }
+  }
 }
 function mselClose(name) {
   const ids = mselIds(name);
