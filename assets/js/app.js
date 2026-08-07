@@ -115,6 +115,7 @@ const S = {
 
 const $  = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
+const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 const nf = (v, d = 0) => v.toLocaleString('en-US',
   { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtAc = acres => nf(acres, acres < 10 ? 2 : acres < 100 ? 1 : 0) + ' ac';
@@ -606,7 +607,7 @@ function buildMap() {
     'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
     { attribution: '&copy; OpenStreetMap contributors &copy; CARTO', maxZoom: 19 });
 
-  BASES.street.addTo(map);
+  BASES.satellite.addTo(map);
 
   // Bottom-right stack: base-map switcher, then zoom, then scale — added
   // in this order so they stack in this order (Leaflet stacks controls
@@ -616,8 +617,8 @@ function buildMap() {
     const d = L.DomUtil.create('div', 'seg seg--map');
     L.DomEvent.disableClickPropagation(d);
     d.innerHTML =
-      '<button class="seg__b is-on" data-base="street">Street</button>' +
-      '<button class="seg__b" data-base="satellite">Satellite</button>' +
+      '<button class="seg__b" data-base="street">Street</button>' +
+      '<button class="seg__b is-on" data-base="satellite">Satellite</button>' +
       '<button class="seg__b" data-base="plain">Plain</button>';
     return d;
   };
@@ -692,8 +693,7 @@ function loadAdminBoundaries() {
       } catch (e) { console.error('boundary z-ordering failed', e); }
 
       const allDistricts = [...new Set(S.districtIndex.map(d => d.name))].sort();
-      fill('#fDistrict', [['all', 'All districts']].concat(
-        allDistricts.map(d => [d, d])));
+      mselPopulate('District', allDistricts.map(d => [d, d]), S.districts, 'All districts');
 
       populateLocalGovOptions();
       updateHighlight();
@@ -781,14 +781,15 @@ function updateHighlight() {
 // parcel data, rather than all 237 units across the province at once.
 // With multiple districts selected, shows the union of their LGs.
 function populateLocalGovOptions() {
-  const el = $('#fLocal');
-  if (!el) return;
-  const effective = S.districts.size ? [...S.districts] : [S.stats.district];
-  const names = [...new Set(effective.flatMap(d => S.lgByDistrict[d] || []))].sort();
-  fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
-  el.disabled = false;
-  el.removeAttribute('title');
-  const pill = el.closest('.fld');
+  const btn = $('#fLocal');
+  if (!btn) return;
+  const names = S.districts.size
+    ? [...new Set([...S.districts].flatMap(d => S.lgByDistrict[d] || []))].sort()
+    : [...new Set(S.lgIndex.map(a => a.name))].sort();   // no district selected -> every LG, province-wide
+  mselPopulate('Local', names.map(n => [n, n]), S.localGovs, 'All local governments');
+  btn.disabled = false;
+  btn.removeAttribute('title');
+  const pill = btn.closest('.fld');
   if (pill) pill.classList.remove('fld--disabled');
 }
 
@@ -798,19 +799,19 @@ function populateLocalGovOptions() {
 // not the whole-district count. Clears the current pick if it no
 // longer exists in the new scope, rather than leaving a stale selection.
 function populateLanduseOptions() {
-  const el = $('#fLanduse');
-  if (!el || !S.props.length) return;   // parcels not loaded yet — leave the static placeholder list
+  const btn = $('#fLanduse');
+  if (!btn || !S.props.length) return;   // parcels not loaded yet — leave the static placeholder list
   const totals = computeFilteredClassTotals();
   const available = S.stats.classes
     .filter(c => totals[c.lu])
     .slice()
     .sort((a, b) => a.lu.localeCompare(b.lu));
-  fill('#fLanduse', [['all', 'All land uses']].concat(
-    available.map(c => [c.lu, `${c.lu} (${totals[c.lu].count})`])));
   // drop any picks that no longer exist in this scope, rather than
   // clearing the whole multi-selection over one invalidated entry
   [...S.luPicks].forEach(lu => { if (!totals[lu]) S.luPicks.delete(lu); });
-  setMultiSelected('#fLanduse', S.luPicks);
+  mselPopulate('Landuse',
+    available.map(c => [c.lu, c.lu, totals[c.lu].count]),
+    S.luPicks, 'All land uses');
 }
 
 function zoomToDistricts(names) {
@@ -997,8 +998,9 @@ function soloGroup(g) {
 // Single pick — used by table rows, chart clicks, and search, which all
 // mean "isolate just this one class" rather than add to a multi-select.
 function setClassPick(lu) {
-  S.luPicks = lu ? new Set([lu]) : new Set();
+  S.luPicks.clear();
   if (lu) {
+    S.luPicks.add(lu);
     S.offClasses.delete(lu);   // picking a class should always reveal it
     syncClassBox(lu);
     syncGroupBox(S.luGroup[lu]);
@@ -1013,7 +1015,8 @@ function setClassPick(lu) {
 // reveals any of them that had been individually toggled off in the
 // legend, same as a single pick does.
 function setClassPicks(list) {
-  S.luPicks = new Set(list);
+  S.luPicks.clear();
+  list.forEach(lu => S.luPicks.add(lu));
   S.luPicks.forEach(lu => {
     S.offClasses.delete(lu);
     syncClassBox(lu);
@@ -1371,16 +1374,16 @@ function buildFilters() {
   // for a merged multi-district layer without further changes.
   const districts = [...new Set(S.props.map(p => p.d).filter(Boolean))];
   if (!districts.length) districts.push(S.stats.district);
-  fill('#fDistrict', [['all', 'All districts']]
-    .concat(districts.sort().map(d => [d, d])));
+  mselPopulate('District', districts.sort().map(d => [d, d]), S.districts, 'All districts');
 
   // Land use — every class, with its parcel count.
-  fill('#fLanduse', [['all', 'All land uses']].concat(
+  mselPopulate('Landuse',
     S.stats.classes.slice()
       .sort((a, b) => a.lu.localeCompare(b.lu))
-      .map(c => [c.lu, `${c.lu} (${nf(c.count)})`])));
+      .map(c => [c.lu, c.lu, c.count]),
+    S.luPicks, 'All land uses');
 
-  fill('#fLocal', [['all', 'Not available']]);
+  mselPopulate('Local', [], S.localGovs, 'Not available yet');
   const fLocalEl = $('#fLocal');
   if (fLocalEl) fLocalEl.title = 'Local government boundaries have not loaded yet.';
   buildSearchIndex();
@@ -1393,32 +1396,107 @@ function fill(sel, pairs) {
     .map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
 }
 
-// fill() rebuilds every <option> via innerHTML, which drops any selected
-// state — call this right after to re-apply which ones should be
-// selected. Empty set selects the "all" option, so it's visually clear
-// that's the active state on the multi-select rather than looking like
-// nothing at all is chosen.
-function setMultiSelected(sel, valuesSet) {
-  const el = $(sel);
-  if (!el) return;
-  Array.from(el.options).forEach(o => {
-    o.selected = valuesSet.size === 0 ? (o.value === 'all') : valuesSet.has(o.value);
+/* ── checkbox-dropdown filter component ──────────────────────────
+   Powers District / Local Govt / Land Use: a button showing a summary
+   of the current selection, opening a searchable checklist panel.
+   `name` is the id-prefix used throughout: 'District' -> #fDistrict
+   (the button itself), #mselDistrictPanel, #mselDistrictSearch,
+   #mselDistrictList, #mselDistrictSummary, #mselDistrict (container).
+   The Set passed to mselPopulate() is used directly, not copied —
+   ticking a box mutates it in place, the same object as
+   S.districts/S.localGovs/S.luPicks, so no separate sync step is
+   needed to keep the two in agreement. */
+const MSEL_STATE = {};     // name -> { pairs, selected, allLabel }
+const MSEL_ONCHANGE = {};  // name -> fn, called after every checkbox toggle
+
+function mselIds(name) {
+  return {
+    container: '#msel' + name,
+    btn: '#f' + name,
+    panel: '#msel' + name + 'Panel',
+    search: '#msel' + name + 'Search',
+    list: '#msel' + name + 'List',
+    summary: '#msel' + name + 'Summary'
+  };
+}
+
+function mselPopulate(name, pairs, selectedSet, allLabel) {
+  MSEL_STATE[name] = { pairs, selected: selectedSet, allLabel };
+  const searchEl = $(mselIds(name).search);
+  mselRenderList(name, searchEl ? searchEl.value : '');
+  mselUpdateSummary(name);
+}
+
+function mselRenderList(name, query) {
+  const ids = mselIds(name);
+  const host = $(ids.list);
+  const st = MSEL_STATE[name];
+  if (!host || !st) return;
+  const q = query.trim().toLowerCase();
+  const filtered = q ? st.pairs.filter(([, l]) => l.toLowerCase().includes(q)) : st.pairs;
+  host.innerHTML = filtered.length ? filtered.map(([v, l, extra]) =>
+    `<label class="msel__row">` +
+      `<input type="checkbox" class="msel__box" value="${esc(v)}"${st.selected.has(v) ? ' checked' : ''}>` +
+      `<span class="msel__nm">${esc(l)}</span>` +
+      (extra !== undefined ? `<span class="msel__n">${esc(String(extra))}</span>` : '') +
+    `</label>`
+  ).join('') : `<div class="msel__empty">No matches</div>`;
+  host.querySelectorAll('.msel__box').forEach(box => {
+    box.addEventListener('change', () => {
+      if (box.checked) st.selected.add(box.value); else st.selected.delete(box.value);
+      mselUpdateSummary(name);
+      if (MSEL_ONCHANGE[name]) MSEL_ONCHANGE[name]();
+    });
   });
 }
 
-// Reads a multi-select's chosen values into a Set, normalising the
-// "all X" option: picking it (or picking nothing) means no restriction
-// (empty Set) and visually deselects everything else; picking specific
-// values visually deselects "all" so the control isn't showing two
-// contradictory things as selected at once.
-function readMultiSelect(el) {
-  const vals = Array.from(el.selectedOptions).map(o => o.value);
-  if (!vals.length || vals.includes('all')) {
-    Array.from(el.options).forEach(o => { o.selected = (o.value === 'all'); });
-    return new Set();
-  }
-  Array.from(el.options).forEach(o => { if (o.value === 'all') o.selected = false; });
-  return new Set(vals);
+function mselUpdateSummary(name) {
+  const ids = mselIds(name);
+  const st = MSEL_STATE[name];
+  if (!st) return;
+  const n = st.selected.size;
+  const text = n === 0 ? st.allLabel : (n <= 2 ? [...st.selected].join(', ') : `${n} selected`);
+  setText(ids.summary, text);
+  markActive(ids.btn, n > 0);
+}
+
+function mselOpen(name) {
+  Object.keys(MSEL_STATE).forEach(n => { if (n !== name) mselClose(n); });
+  const ids = mselIds(name);
+  const btn = $(ids.btn), panel = $(ids.panel);
+  if (!btn || !panel || btn.disabled) return;
+  panel.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  const search = $(ids.search);
+  if (search) { search.value = ''; mselRenderList(name, ''); search.focus(); }
+}
+function mselClose(name) {
+  const ids = mselIds(name);
+  const btn = $(ids.btn), panel = $(ids.panel);
+  if (panel) panel.hidden = true;
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+function mselToggle(name) {
+  const panel = $(mselIds(name).panel);
+  if (panel && !panel.hidden) mselClose(name); else mselOpen(name);
+}
+function mselClear(name) {
+  const st = MSEL_STATE[name];
+  if (!st) return;
+  st.selected.clear();
+  const searchEl = $(mselIds(name).search);
+  mselRenderList(name, searchEl ? searchEl.value : '');
+  mselUpdateSummary(name);
+  if (MSEL_ONCHANGE[name]) MSEL_ONCHANGE[name]();
+}
+
+function wireMsel(name) {
+  const ids = mselIds(name);
+  on(ids.btn, 'click', () => mselToggle(name));
+  on(ids.search, 'input', e => mselRenderList(name, e.target.value));
+  on(ids.search, 'keydown', e => {
+    if (e.key === 'Escape') { mselClose(name); const btn = $(ids.btn); if (btn) btn.focus(); }
+  });
 }
 
 function esc(s) {
@@ -1469,11 +1547,13 @@ function assignLocalGov() {
   // This assignment belongs to S.stats.district specifically. If the
   // user has already navigated to a different district in the (brief)
   // time this took, populateLocalGovOptions() already has the right
-  // list for wherever they are now — don't clobber it.
-  const effective = S.districts.size ? [...S.districts] : [S.stats.district];
-  if (effective.includes(S.stats.district)) {
+  // list for wherever they are now — don't clobber it. And if nothing
+  // is selected at all, the province-wide list from populateLocalGovOptions()
+  // should stand — narrowing to just Hafizabad's real names here would
+  // undo that.
+  if (S.districts.size && S.districts.has(S.stats.district)) {
     const names = [...new Set(S.props.map(p => p.lg).filter(Boolean))].sort();
-    fill('#fLocal', [['all', 'All local governments']].concat(names.map(n => [n, n])));
+    mselPopulate('Local', names.map(n => [n, n]), S.localGovs, 'All local governments');
     note('');
   }
   refreshStats();
@@ -1660,13 +1740,13 @@ function choose(i) {
 
 function syncControls() {
   const set = (sel, v) => { const el = $(sel); if (el) el.value = v; };
-  setMultiSelected('#fDistrict', S.districts);
-  setMultiSelected('#fLocal',    S.localGovs);
-  setMultiSelected('#fLanduse',  S.luPicks);
+  ['District', 'Local', 'Landuse'].forEach(name => {
+    if (!MSEL_STATE[name]) return;
+    const searchEl = $(mselIds(name).search);
+    mselRenderList(name, searchEl ? searchEl.value : '');
+    mselUpdateSummary(name);
+  });
   set('#fCategory', S.cat);
-  markActive('#fDistrict', S.districts.size > 0);
-  markActive('#fLocal',    S.localGovs.size > 0);
-  markActive('#fLanduse',  S.luPicks.size > 0);
   markActive('#fCategory', S.cat !== 'all');
 }
 
@@ -1902,22 +1982,17 @@ function wire() {
   }));
 
   /* ── filter bar: District / Local Govt / Land Use / Category / search ── */
-  const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
-  on('#fDistrict', 'change', e => {
-    S.districts = readMultiSelect(e.target);
-    S.localGovs = new Set();   // a previous LG pick may not belong to the new district(s)
+  MSEL_ONCHANGE.District = () => {
+    S.localGovs.clear();   // a previous LG pick may not belong to the new district(s)
     populateLocalGovOptions();
     populateLanduseOptions();
     updateHighlight();
     zoomToDistricts(S.districts);
     updateDataAvailabilityNote();
-    markActive('#fDistrict', S.districts.size > 0);
-    markActive('#fLocal', false);
     afterFilter();
-  });
-  on('#fLocal', 'change', e => {
-    S.localGovs = readMultiSelect(e.target);
+  };
+  MSEL_ONCHANGE.Local = () => {
     if (S.localGovs.size) {
       // If any picked LG belongs to a district not currently selected,
       // bring its parent district along too, so the two controls stay
@@ -1929,23 +2004,41 @@ function wire() {
       if (needsUpdate && parents.size) {
         parents.forEach(d => S.districts.add(d));
         populateLocalGovOptions();
-        setMultiSelected('#fLocal', S.localGovs);
-        setMultiSelected('#fDistrict', S.districts);
+        const districtSearchEl = $(mselIds('District').search);
+        mselRenderList('District', districtSearchEl ? districtSearchEl.value : '');
+        mselUpdateSummary('Local');
+        mselUpdateSummary('District');
         updateDataAvailabilityNote();
-        markActive('#fDistrict', S.districts.size > 0);
       }
     }
     populateLanduseOptions();
     updateHighlight();
     zoomToLocalGovs(S.localGovs);
-    markActive('#fLocal', S.localGovs.size > 0);
     afterFilter();
-  });
-
-  on('#fLanduse', 'change', e => {
-    const picked = readMultiSelect(e.target);
-    setClassPicks(picked);
+  };
+  MSEL_ONCHANGE.Landuse = () => {
+    // S.luPicks is the same Set the component mutates directly — just
+    // apply the "reveal in the legend" side effects, same as
+    // setClassPick/setClassPicks do, without reassigning the Set (which
+    // would break the live binding to the dropdown's own state).
+    S.luPicks.forEach(lu => {
+      S.offClasses.delete(lu);
+      syncClassBox(lu);
+      syncGroupBox(S.luGroup[lu]);
+    });
+    syncControls();
+    afterFilter();
+    markTable();
     if (S.luPicks.size) zoomToClasses(S.luPicks);
+  };
+  wireMsel('District');
+  wireMsel('Local');
+  wireMsel('Landuse');
+  document.addEventListener('click', e => {
+    ['District', 'Local', 'Landuse'].forEach(name => {
+      const container = $(mselIds(name).container);
+      if (container && !container.contains(e.target)) mselClose(name);
+    });
   });
 
   // Direct set on the select — no toggle, since re-picking the same
@@ -2008,9 +2101,9 @@ function wire() {
 function resetAll() {
   S.offClasses.clear();
   S.cat = 'all';
-  S.districts = new Set();
-  S.localGovs = new Set();
-  S.luPicks = new Set();
+  S.districts.clear();
+  S.localGovs.clear();
+  S.luPicks.clear();
   S.query = '';
   S.showDistrict = true;
   S.showLG = false;
