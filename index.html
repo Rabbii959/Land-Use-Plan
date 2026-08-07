@@ -40,8 +40,20 @@
           <input type="checkbox" class="fld__vis" id="visDistrict" checked
                  title="Show district boundaries on the map" aria-label="Show district boundaries on the map">
           <label class="fld__l" for="fDistrict">District</label>
-          <select class="sel sel--multi" id="fDistrict" multiple size="5"
-                  aria-label="District — ctrl/cmd-click to select more than one"></select>
+          <div class="msel" id="mselDistrict">
+            <button type="button" class="msel__btn" id="fDistrict"
+                    aria-haspopup="listbox" aria-expanded="false">
+              <span class="msel__summary" id="mselDistrictSummary">All districts</span>
+              <svg class="msel__chev" viewBox="0 0 12 8" width="10" height="7" aria-hidden="true">
+                <path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="msel__panel" id="mselDistrictPanel" hidden>
+              <input type="text" class="msel__search" id="mselDistrictSearch"
+                     placeholder="Search districts…" autocomplete="off" aria-label="Search districts">
+              <div class="msel__list" id="mselDistrictList" role="listbox" aria-multiselectable="true"></div>
+            </div>
+          </div>
         </div>
         <div class="fld__opac">
           <input type="range" class="fld__range" id="opDistrict" min="0" max="100" value="100"
@@ -54,8 +66,20 @@
           <input type="checkbox" class="fld__vis" id="visLG"
                  title="Show Local Govt boundaries on the map" aria-label="Show Local Govt boundaries on the map">
           <label class="fld__l" for="fLocal">Local Govt</label>
-          <select class="sel sel--multi" id="fLocal" multiple size="5" disabled
-                  aria-label="Local Govt — ctrl/cmd-click to select more than one"></select>
+          <div class="msel" id="mselLocal">
+            <button type="button" class="msel__btn" id="fLocal" disabled
+                    aria-haspopup="listbox" aria-expanded="false">
+              <span class="msel__summary" id="mselLocalSummary">All local governments</span>
+              <svg class="msel__chev" viewBox="0 0 12 8" width="10" height="7" aria-hidden="true">
+                <path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="msel__panel" id="mselLocalPanel" hidden>
+              <input type="text" class="msel__search" id="mselLocalSearch"
+                     placeholder="Search local governments…" autocomplete="off" aria-label="Search local governments">
+              <div class="msel__list" id="mselLocalList" role="listbox" aria-multiselectable="true"></div>
+            </div>
+          </div>
         </div>
         <div class="fld__opac">
           <input type="range" class="fld__range" id="opLG" min="0" max="100" value="100"
@@ -68,8 +92,20 @@
           <input type="checkbox" class="fld__vis" id="visLanduse"
                  title="Show land use parcels on the map" aria-label="Show land use parcels on the map">
           <label class="fld__l" for="fLanduse">Land Use</label>
-          <select class="sel sel--multi" id="fLanduse" multiple size="5"
-                  aria-label="Land Use — ctrl/cmd-click to select more than one"></select>
+          <div class="msel" id="mselLanduse">
+            <button type="button" class="msel__btn" id="fLanduse"
+                    aria-haspopup="listbox" aria-expanded="false">
+              <span class="msel__summary" id="mselLanduseSummary">All land uses</span>
+              <svg class="msel__chev" viewBox="0 0 12 8" width="10" height="7" aria-hidden="true">
+                <path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="msel__panel" id="mselLandusePanel" hidden>
+              <input type="text" class="msel__search" id="mselLanduseSearch"
+                     placeholder="Search land uses…" autocomplete="off" aria-label="Search land uses">
+              <div class="msel__list" id="mselLanduseList" role="listbox" aria-multiselectable="true"></div>
+            </div>
+          </div>
         </div>
         <div class="fld__opac">
           <input type="range" class="fld__range" id="opLanduse" min="0" max="100" value="100"
@@ -116,7 +152,7 @@
         </svg>
       </button>
     </div>
-    <p class="filters__hint">District, Local Govt, and Land Use each accept more than one — hold Ctrl (Windows) or ⌘ (Mac) and click to select several.</p>
+    <p class="filters__hint">District, Local Govt, and Land Use each open a checklist — tick as many as you want, or type to search within it.</p>
     <p class="filters__note" id="fNote" hidden></p>
   </section>
 
