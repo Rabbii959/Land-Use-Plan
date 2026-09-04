@@ -14,9 +14,43 @@
 
 <a class="skip" href="#map">Skip to map</a>
 
+<!-- ══════════════════════════════════════ masthead -->
+<header class="masthead">
+  <div class="masthead__in">
+    <img class="masthead__logo masthead__logo--l" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/GOVT-LOGO-1-150x150.png" alt="Government of Punjab Logo" onerror="this.style.display='none'">
 
+    <div class="masthead__centre">
+      <div class="masthead__text">
+        <h1 class="masthead__title"><span>Statistical Dashboard</span> of District Land Use Plans of Punjab</h1>
+      </div>
+    </div>
 
-  box" aria-multiselectable="true"></div>
+    <img class="masthead__logo masthead__logo--r" src="https://pmu-lgcdd.gop.pk/wp-content/uploads/2025/02/PMU-LOGO-1-150x150.png" alt="PMU Logo" onerror="this.style.display='none'">
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ══════════════════════════════════════ filters -->
+  <section class="filters" aria-label="Filter the plan">
+    <div class="filters__row">
+      <div class="fld">
+        <div class="fld__top">
+          <input type="checkbox" class="fld__vis" id="visDistrict" checked
+                 title="Show district boundaries on the map" aria-label="Show district boundaries on the map">
+          <label class="fld__l" for="fDistrict">District</label>
+          <div class="msel" id="mselDistrict">
+            <button type="button" class="msel__btn" id="fDistrict"
+                    aria-haspopup="listbox" aria-expanded="false">
+              <span class="msel__summary" id="mselDistrictSummary">All districts</span>
+              <svg class="msel__chev" viewBox="0 0 12 8" width="10" height="7" aria-hidden="true">
+                <path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="msel__panel" id="mselDistrictPanel" hidden>
+              <input type="text" class="msel__search" id="mselDistrictSearch"
+                     placeholder="Search districts…" autocomplete="off" aria-label="Search districts">
+              <div class="msel__list" id="mselDistrictList" role="listbox" aria-multiselectable="true"></div>
             </div>
           </div>
         </div>
